@@ -34,6 +34,10 @@ UTC = datetime.timezone.utc
 CI_RUN_NAME = "Run tests with twister"
 CI_RUN_MAX_AGE_DAYS = 31
 
+HOTFIX_LABEL = "Hotfix"
+TRIVIAL_LABEL = "Trivial"
+OVERRIDE_REQUIRED_LABEL = "Override Required"
+
 
 @dataclass
 class PRData:
@@ -46,6 +50,7 @@ class PRData:
     rebaseable: bool = field(default=False)
     hotfix: bool = field(default=False)
     trivial: bool = field(default=False)
+    override_required: bool = field(default=False)
     dnm: bool = field(default=False)
     ci_age_days: int = field(default=None)
     ci_run_recent: bool = field(default=False)
@@ -109,8 +114,9 @@ def evaluate_criteria(repo, number, data):
     labels = [l.name for l in pr.labels]
     assignees = [a.login for a in pr.assignees]
     rebaseable = pr.rebaseable
-    hotfix = "Hotfix" in labels
-    trivial = "Trivial" in labels
+    hotfix = HOTFIX_LABEL in labels
+    trivial = TRIVIAL_LABEL in labels
+    override_required = OVERRIDE_REQUIRED_LABEL in labels
 
     for label in labels:
         if "DNM" in label:
@@ -182,11 +188,12 @@ def evaluate_criteria(repo, number, data):
     data.rebaseable = rebaseable
     data.hotfix = hotfix
     data.trivial = trivial
+    data.override_required = override_required
     data.dismissed = dismissed
 
     data.debug = [number, author, assignees, approvers, delta_hours,
                   delta_biz_hours, time_left, rebaseable, hotfix, trivial,
-                  data.ci_run_recent, dismissed]
+                  override_required, data.ci_run_recent, dismissed]
 
 
 def table_entry(number, data):
@@ -232,6 +239,8 @@ def table_entry(number, data):
         tags.append("<span class='tag tag-hotfix'>hotfix</span>")
     if data.trivial:
         tags.append("<span class='tag tag-trivial'>trivial</span>")
+    if data.override_required:
+        tags.append("<span class='tag tag-override'>override required</span>")
     if not data.ci_run_recent:
         tags.append(f"<span class='tag tag-oldci'>ci {data.ci_age_days}d</span>")
     if data.dismissed:
@@ -421,14 +430,19 @@ def we_dont_care(pr):
         if pr["isDraft"]:
             return True
 
+        override_required = False
         for label in pr["labels"]["nodes"]:
             if "DNM" in label["name"]:
                 return True
+            if label["name"] == OVERRIDE_REQUIRED_LABEL:
+                override_required = True
 
         if pr['reviewDecision'] != "APPROVED":
             return True
 
-        if pr["statusCheckRollup"]["state"] != "SUCCESS":
+        status_check_rollup = pr["statusCheckRollup"]
+        ci_state = status_check_rollup["state"] if status_check_rollup else None
+        if ci_state != "SUCCESS" and not override_required:
             return True
     except Exception as e:
         print(f"data error, skipping: {e}, {pr}")
@@ -509,7 +523,7 @@ def main(argv):
 
     debug_headers = ["number", "author", "assignees", "approvers",
                      "delta_hours", "delta_biz_hours", "time_left", "Mergeable",
-                     "Hotfix", "Trivial", "Dismissed"]
+                     "Hotfix", "Trivial", "Override Required", "Dismissed"]
     debug_data = []
     for _, data in pr_data.items():
         debug_data.append(data.debug)

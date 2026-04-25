@@ -153,6 +153,11 @@ a.blocked {
 	color: white;
 }
 
+.tag-override {
+	background-color: #6f42c1;
+	color: white;
+}
+
 .tag-oldci {
 	background-color: #fef2c0;
 	color: black;
