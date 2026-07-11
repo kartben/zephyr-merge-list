@@ -1,328 +1,498 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zephyr merge list</title>
+
 <style>
+/* Theme: every color lives in a variable so light and dark stay in sync. */
+:root {
+	--bg: #f6f7f9;
+	--panel: #ffffff;
+	--fg: #1d2531;
+	--muted: #5d6b83;
+	--border: #dce2eb;
+	--accent: #6e37c8;
+	--ok: #1a7f37;
+	--ok-bg: #def0e3;
+	--warn: #7d5c00;
+	--warn-bg: #fdeeba;
+	--bad: #b42323;
+	--bad-bg: #fbe2e2;
+	--neutral-bg: #e8ecf2;
+	--row-ready: #effaf1;
+	--row-hover: #eef1f6;
+	--header-bg: #333f67;
+	--header-fg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #0e1116;
+		--panel: #171c24;
+		--fg: #e3e7ee;
+		--muted: #98a4b8;
+		--border: #2c3442;
+		--accent: #a97ff0;
+		--ok: #4ecb71;
+		--ok-bg: #17311d;
+		--warn: #e8c341;
+		--warn-bg: #37300e;
+		--bad: #f47070;
+		--bad-bg: #3d1a1a;
+		--neutral-bg: #232a36;
+		--row-ready: #14231a;
+		--row-hover: #202836;
+		--header-bg: #232c4a;
+		--header-fg: #dfe4f2;
+	}
+}
+
+/* Icon shapes, vendored from Material Icons (Apache-2.0) so status
+ * symbols render identically everywhere instead of depending on
+ * whichever glyphs the system font provides. */
+:root {
+	--icon-check: url('data:image/svg+xml,%3Csvg%20xmlns="http://www.w3.org/2000/svg"%20viewBox="0%200%2024%2024"%3E%3Cpath%20d="M9%2016.17L4.83%2012l-1.42%201.41L9%2019%2021%207l-1.41-1.41z"/%3E%3C/svg%3E');
+	--icon-close: url('data:image/svg+xml,%3Csvg%20xmlns="http://www.w3.org/2000/svg"%20viewBox="0%200%2024%2024"%3E%3Cpath%20d="M19%206.41L17.59%205%2012%2010.59%206.41%205%205%206.41%2010.59%2012%205%2017.59%206.41%2019%2012%2013.41%2017.59%2019%2019%2017.59%2013.41%2012z"/%3E%3C/svg%3E');
+	--icon-block: url('data:image/svg+xml,%3Csvg%20xmlns="http://www.w3.org/2000/svg"%20viewBox="0%200%2024%2024"%3E%3Cpath%20d="M12%202C6.48%202%202%206.48%202%2012s4.48%2010%2010%2010%2010-4.48%2010-10S17.52%202%2012%202zM4%2012c0-4.42%203.58-8%208-8%201.85%200%203.55.63%204.9%201.69L5.69%2016.9C4.63%2015.55%204%2013.85%204%2012zm8%208c-1.85%200-3.55-.63-4.9-1.69L18.31%207.1C19.37%208.45%2020%2010.15%2020%2012c0%204.42-3.58%208-8%208z"/%3E%3C/svg%3E');
+	--icon-refresh: url('data:image/svg+xml,%3Csvg%20xmlns="http://www.w3.org/2000/svg"%20viewBox="0%200%2024%2024"%3E%3Cpath%20d="M17.65%206.35C16.2%204.9%2014.21%204%2012%204c-4.42%200-7.99%203.58-7.99%208s3.57%208%207.99%208c3.73%200%206.84-2.55%207.73-6h-2.08c-.82%202.33-3.04%204-5.65%204-3.31%200-6-2.69-6-6s2.69-6%206-6c1.66%200%203.14.69%204.22%201.78L13%2011h7V4l-2.35%202.35z"/%3E%3C/svg%3E');
+}
+
+/* Icons are drawn as masks over the text color. */
+.ci-pass::before, .ci-fail::before, .ci-cancelled::before, .ci-running::before,
+.gate-pass::before, .gate-fail::before {
+	content: "";
+	display: inline-block;
+	width: 1em;
+	height: 1em;
+	vertical-align: -0.15em;
+	background: currentColor;
+	-webkit-mask: center / contain no-repeat;
+	mask: center / contain no-repeat;
+}
+.ci-pass::before, .gate-pass::before {
+	-webkit-mask-image: var(--icon-check);
+	mask-image: var(--icon-check);
+}
+.ci-fail::before, .gate-fail::before {
+	-webkit-mask-image: var(--icon-close);
+	mask-image: var(--icon-close);
+}
+.ci-cancelled::before {
+	-webkit-mask-image: var(--icon-block);
+	mask-image: var(--icon-block);
+}
+.ci-running::before {
+	-webkit-mask-image: var(--icon-refresh);
+	mask-image: var(--icon-refresh);
+}
+
+* { box-sizing: border-box; }
+
 body {
-	font-family: Roboto, Arial, sans-serif;
-	font-size: 14px
-}
-@media (prefers-color-scheme: dark) {
-	body {
-		background-color: #0d1111;
-		color: #e0e0e0;
-	}
-}
-
-a {
-	text-decoration: none;
-	color: #000000;
-}
-@media (prefers-color-scheme: dark) {
-	a {
-		color: #eeeeee;
-	}
+	margin: 0 auto;
+	padding: 16px 24px 32px;
+	max-width: 1600px;
+	background: var(--bg);
+	color: var(--fg);
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 14px;
+	line-height: 1.45;
 }
 
-a:hover {
-	text-decoration: underline;
-	color: #000000;
-}
-@media (prefers-color-scheme: dark) {
-	a:hover {
-		color: #eeeeee;
-	}
+/* Keep the side padding from eating the narrow screens. */
+@media (max-width: 640px) {
+	body { padding: 8px 12px 24px; }
 }
 
-span.approved {
-	color: #269926
-}
-@media (prefers-color-scheme: dark) {
-	span.approved {
-		color: #40ff40
-	}
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---- Page header ------------------------------------------------------ */
+
+.page-header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.page-header h1 { margin: 8px 0 0; font-size: 24px; }
+.page-header .subtitle { color: var(--muted); margin: 0; }
+
+/* ---- Summary cards ----------------------------------------------------- */
+
+.summary {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 12px;
+	margin: 16px 0;
 }
 
-span.blocked {
-	color: #992626
-}
-@media (prefers-color-scheme: dark) {
-	span.blocked {
-		color: #ff4040;
-	}
+.card {
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 10px 14px;
 }
 
-span.unknown {
-	color: #999926
-}
-@media (prefers-color-scheme: dark) {
-	span.unknown {
-		color: #ffff40;
-	}
-}
-
-span.none {
-	color: #999999
+.card .card-label {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--muted);
+	margin-bottom: 4px;
 }
 
-a.approved {
-	color: #269926
+.card .card-value { font-size: 16px; font-weight: 600; }
+.card .card-note { font-size: 12px; color: var(--muted); }
+.card .big { font-size: 24px; color: var(--ok); }
+
+.ci-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.ci-badge {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 12px;
+	background: var(--neutral-bg);
+	white-space: nowrap;
+}
+.ci-badge::before { margin-right: 4px; }
+.ci-pass { background: var(--ok-bg); color: var(--ok); }
+.ci-fail { background: var(--bad-bg); color: var(--bad); }
+.ci-cancelled { background: var(--warn-bg); color: var(--warn); }
+.ci-running { background: var(--neutral-bg); color: var(--accent); font-weight: 600; }
+.ci-running::before { animation: ci-spin 2s linear infinite; }
+@keyframes ci-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+	.ci-running::before { animation: none; }
 }
 
-a.blocked {
-	color: #992626
-}
-
-.prs {
-	border-collapse: collapse;
-	width: 100%;
-}
-
-.prs td, .prs th {
-	border: 1px solid #ddd;
-	padding: 4px;
-}
-
-.prs tr:nth-child(even){
-	background-color: #f2f2f2;
-}
-@media (prefers-color-scheme: dark) {
-	.prs tr:nth-child(even){
-		background-color: #303030;
-	}
-}
-
-.prs tr:hover {
-	background-color: #eeeeee;
-}
-@media (prefers-color-scheme: dark) {
-	.prs tr:hover {
-		background-color: #555555;
-	}
-}
-
-.prs th {
-	padding-top: 4px;
-	padding-bottom: 4px;
-	text-align: left;
-	background-color: #333f67;
-	color: white;
-}
-
-.prs tr.draft {
-	font-style: italic;
-	opacity: 0.5;
-}
-
-.prs tr.mergeable {
-	background-color: #e8f5e8;
-	font-weight: 500;
-}
-@media (prefers-color-scheme: dark) {
-	.prs tr.mergeable {
-		background-color: #1a3d1a;
-	}
-}
+/* ---- MOTD banner ------------------------------------------------------- */
 
 .motd {
-	margin-left: auto;
-	margin-right: auto;
-	border: 3px solid red;
-	margin-top: 10px;
-	margin-bottom: 10px;
+	border: 1px solid var(--bad);
+	border-left-width: 6px;
+	border-radius: 8px;
+	background: var(--bad-bg);
+	padding: 10px 14px;
+	margin: 12px 0;
 }
+
+/* ---- Table ------------------------------------------------------------- */
+
+.table-wrap {
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	overflow-x: auto;
+}
+
+.prs { border-collapse: collapse; width: 100%; }
+
+.prs th, .prs td {
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--border);
+	text-align: left;
+	vertical-align: top;
+}
+
+.prs thead th {
+	position: sticky;
+	top: 0;
+	background: var(--header-bg);
+	color: var(--header-fg);
+	font-size: 12px;
+	white-space: nowrap;
+	cursor: help;
+}
+
+.prs tbody tr:hover { background: var(--row-hover); }
+.prs tbody tr:last-child td { border-bottom: none; }
+
+.prs tr.status-ready { background: var(--row-ready); }
+.prs tr.status-ready:hover { background: var(--row-hover); }
+
+.prs td.num, .prs td.gate { white-space: nowrap; }
+.prs td.gate { text-align: center; }
+.prs th.gate-col { text-align: center; }
+
+.gate-pass { color: var(--ok); font-weight: 600; }
+.gate-fail { color: var(--bad); font-weight: 600; }
+.gate-wait { color: var(--warn); font-weight: 600; white-space: nowrap; }
+.gate-unknown { color: var(--muted); }
+
+.muted { color: var(--muted); }
+
+/* ---- Status pills ------------------------------------------------------ */
+
+.pill {
+	display: inline-block;
+	padding: 1px 9px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: default;
+}
+.pill-ready { background: var(--ok-bg); color: var(--ok); }
+.pill-waiting { background: var(--warn-bg); color: var(--warn); }
+.pill-blocked { background: var(--bad-bg); color: var(--bad); }
+.pill-unknown { background: var(--neutral-bg); color: var(--muted); }
+
+/* ---- Label tags (shown next to PR titles) ------------------------------ */
 
 .tag {
 	display: inline-block;
-	padding: 0px 6px;
+	padding: 0 6px;
 	border-radius: 4px;
-	font-family: sans-serif;
-	font-size: 12px;
-	font-weight: bold;
-	text-align: center;
+	font-size: 11px;
+	font-weight: 600;
 	white-space: nowrap;
+	cursor: default;
+}
+.tag-hotfix { background: #b60205; color: white; }
+.tag-trivial { background: #f9d0b1; color: #402000; }
+.tag-override { background: #6f42c1; color: white; }
+.tag-oldci { background: #fef2c0; color: #574b00; }
+.tag-dismissed { background: #ff69b4; color: #3d0d24; }
+.tag-dnm { background: #b60205; color: white; }
+
+/* ---- Footer / misc ----------------------------------------------------- */
+
+.toolbar {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	flex-wrap: wrap;
+	margin: 12px 0;
 }
 
-.tag-trivial {
-	background-color: #f9d0b1;
-	color: black;
-}
-
-.tag-hotfix {
-	background-color: #b60205;
-	color: white;
-}
-
-.tag-override {
-	background-color: #6f42c1;
-	color: white;
-}
-
-.tag-oldci {
-	background-color: #fef2c0;
-	color: black;
-}
-
-.tag-dismissed {
-	background-color: #ff69b4;
-	color: black;
-}
-
-.tag-dnm {
-	background-color: #b60205;
-	color: white;
-}
-
-.mergeable-button {
-	padding: 8px 16px;
-	background-color: #269926;
-	color: white;
+.open-ready-button {
+	padding: 6px 14px;
+	background: var(--ok);
+	color: var(--bg);
 	border: none;
-	border-radius: 4px;
+	border-radius: 6px;
+	font-size: 13px;
+	font-weight: 600;
 	cursor: pointer;
-	font-size: 14px;
-	transition: background-color 0.2s;
 }
+.open-ready-button:hover { filter: brightness(1.15); }
 
-.mergeable-button:hover {
-	background-color: #1e7a1e;
-}
+.help { margin: 16px 0; color: var(--fg); max-width: 900px; }
+.help summary { cursor: pointer; font-weight: 600; color: var(--muted); }
+.help h4 { margin: 12px 0 4px; }
+.help td, .help th { padding: 2px 10px 2px 0; text-align: left; vertical-align: top; }
 
-@media (prefers-color-scheme: dark) {
-	.mergeable-button {
-		background-color: #40ff40;
-		color: #000000;
-	}
-
-	.mergeable-button:hover {
-		background-color: #33cc33;
-	}
-}
+footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
+footer img { vertical-align: middle; }
 </style>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.30.1/moment.min.js"></script>
+<script>
+"use strict";
 
-<script type="text/javascript">
-	addEventListener("load", (event) => {
-		const url = "https://raw.githubusercontent.com/wiki/zephyrproject-rtos/zephyr/Merge-List-MOTD.md";
-		fetch(url)
-			.then((response) => {
-				if (!response.ok) {
-					throw new Error("HTTP error: " + response.status);
-				}
-				return response.text();
-			})
-			.then((text) => {
-				console.log("motd: " + text);
+/* Message of the day: maintained on the Zephyr wiki, shown when not "empty". */
+function loadMotd() {
+	const url = "https://raw.githubusercontent.com/wiki/zephyrproject-rtos/zephyr/Merge-List-MOTD.md";
+	fetch(url)
+		.then((response) => {
+			if (!response.ok) {
+				throw new Error("HTTP error: " + response.status);
+			}
+			return response.text();
+		})
+		.then((text) => {
+			if (text.trim() == "empty") {
+				return;
+			}
+			const banner = document.getElementById("motd");
+			banner.textContent = text;
+			banner.hidden = false;
+		})
+		.catch((error) => console.log("motd: " + error));
+}
 
-				if (text == "empty") {
-					return;
-				}
+/* Show "12 minutes ago" instead of a raw ISO timestamp. */
+function renderUpdateTime() {
+	const el = document.getElementById("update-timestamp");
+	const then = Date.parse(el.getAttribute("datetime"));
+	const seconds = Math.round((then - Date.now()) / 1000);
+	const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
-				const motd_table = document.getElementById("motd-table");
-				const motd_text = document.getElementById("motd-text");
-				motd_text.textContent = text;
-				motd_table.hidden = false;
-			});
-	});
-</script>
-
-<script type="text/javascript">
-	addEventListener("load", (event) => {
-		var checkbox = document.getElementById("autoRefreshCheckbox");
-		var value = localStorage.getItem("autoRefresh");
-		if (value == "true") {
-			checkbox.checked = true;
-		}
-
-		convertTimestampToRelative();
-	});
-
-	function convertTimestampToRelative() {
-		const timestampElement = document.getElementById("update-timestamp");
-		const momentTime = moment(timestampElement.textContent);
-		const headerElement = document.getElementById("last-update-header");
-
-		timestampElement.textContent = momentTime.fromNow();
-		timestampElement.title = momentTime.toString();
-		headerElement.style.visibility = "visible";
+	let text;
+	if (Math.abs(seconds) < 60) {
+		text = rtf.format(seconds, "second");
+	} else if (Math.abs(seconds) < 3600) {
+		text = rtf.format(Math.round(seconds / 60), "minute");
+	} else if (Math.abs(seconds) < 86400) {
+		text = rtf.format(Math.round(seconds / 3600), "hour");
+	} else {
+		text = rtf.format(Math.round(seconds / 86400), "day");
 	}
+	el.textContent = text;
+	el.title = new Date(then).toString();
+}
 
-	function refreshSave() {
-		var checkbox = document.getElementById("autoRefreshCheckbox");
+/* Auto-refresh: opt-in via checkbox, remembered in localStorage. */
+function setupAutoRefresh() {
+	const checkbox = document.getElementById("auto-refresh");
+	checkbox.checked = localStorage.getItem("autoRefresh") == "true";
+	checkbox.addEventListener("change", () => {
 		localStorage.setItem("autoRefresh", checkbox.checked);
-	}
-
-	setInterval(function () {
-		if (document.getElementById("autoRefreshCheckbox").checked) {
+	});
+	setInterval(() => {
+		if (checkbox.checked) {
 			location.reload();
 		}
 	}, 60000);
+}
 
-	function openMergeablePRs() {
-		const prTable = document.getElementById("author");
-		const mergeableRows = prTable.querySelectorAll("tr.mergeable");
+/* Open every PR that is ready to merge into main, each in its own tab. */
+function openReadyPRs() {
+	const rows = document.querySelectorAll(
+		'#pr-table tr[data-status="ready"][data-base="main"]');
 
-		let openedCount = 0;
-		mergeableRows.forEach(row => {
-			// Get the PR URL from the first cell
-			const prLink = row.cells[0].querySelector('a');
-			if (prLink) {
-				window.open(prLink.href, '_blank');
-				openedCount++;
-			}
-		});
-
-		if (openedCount === 0) {
-			alert("No mergeable PRs found (PRs need to target 'main' and have three green checkmarks)");
-		}
+	if (rows.length == 0) {
+		alert("No PRs are ready to merge into main right now.");
+		return;
 	}
+	rows.forEach((row) => {
+		const link = row.querySelector("a");
+		if (link) {
+			window.open(link.href, "_blank");
+		}
+	});
+}
+
+addEventListener("DOMContentLoaded", () => {
+	loadMotd();
+	renderUpdateTime();
+	setInterval(renderUpdateTime, 30000);
+	setupAutoRefresh();
+});
 </script>
 
 </head>
 
 <body>
 
-<h1>Merge list</h1>
+<div class="page-header">
+	<h1>Zephyr merge list</h1>
+	<p class="subtitle">Open pull requests that are approved, pass CI, and are
+	in line to be merged into
+	<a href="https://github.com/zephyrproject-rtos/zephyr">zephyrproject-rtos/zephyr</a>.</p>
+</div>
 
-<h3 id="last-update-header" style="visibility: hidden;">
-  Last update: <span id="update-timestamp">UPDATE_TIMESTAMP</span>
-</h3>
-<h3>CI: CI_STATUS</h3>
+<div class="motd" id="motd" role="alert" hidden></div>
 
-<table class="motd" id="motd-table" hidden>
-  <tr><td id="motd-text"></td></tr>
-</table>
+<div class="summary">
+	<div class="card">
+		<div class="card-label">Ready to merge</div>
+		<div class="card-value"><span class="big">READY_COUNT</span> of TOTAL_COUNT listed</div>
+		<div class="card-note">PRs that pass all three merge gates</div>
+	</div>
+	<div class="card">
+		<div class="card-label">CI on main</div>
+		<div class="ci-badges">CI_STATUS</div>
+	</div>
+	<div class="card">
+		<div class="card-label">Release phase</div>
+		<div class="card-value" title="RELEASE_PHASE_HINT">RELEASE_PHASE</div>
+		<div class="card-note">RELEASE_PHASE_DETAIL</div>
+	</div>
+	<div class="card">
+		<div class="card-label">Last updated</div>
+		<div class="card-value">
+			<time id="update-timestamp" datetime="UPDATE_TIMESTAMP">UPDATE_TIMESTAMP</time>
+		</div>
+		<div class="card-note">
+			<label><input type="checkbox" id="auto-refresh"> refresh automatically</label>
+		</div>
+	</div>
+</div>
 
-<table class="prs" id="author">
-  <tr>
-    <th>#</th>
-    <th>Title</th>
-    <th>Tags</th>
-    <th>Author</th>
-    <th>Assignee</th>
-    <th>Approvers</th>
-    <th>Base</th>
-    <th>Milestone</th>
-    <th title="Mergeable">&#8624;</th>
-    <th title="Approved">&check;</th>
-    <th title="Review time">&#9202;</th>
-  </tr>
-
+<div class="table-wrap">
+<table class="prs" id="pr-table">
+	<thead>
+	<tr>
+		<th title="Pull request number">PR</th>
+		<th title="Pull request title and labels">Title</th>
+		<th title="Summary: is this PR ready to merge, and if not, why not?">Status</th>
+		<th class="gate-col" title="Gate 1: the PR applies cleanly on its target branch (no merge conflicts)">Conflict&#8209;free</th>
+		<th class="gate-col" title="Gate 2: an assignee approved the PR (auto-passes for hotfixes, unassigned PRs, or when the author is the assignee)">Assignee approval</th>
+		<th class="gate-col" title="Gate 3: the minimum review window has elapsed &mdash; 48 business hours, 4 hours for trivial PRs, none for hotfixes">Review time</th>
+		<th title="Who opened the PR">Author</th>
+		<th title="Maintainers assigned to shepherd the PR">Assignees</th>
+		<th title="Reviewers whose approval currently stands">Approvers</th>
+		<th title="Branch the PR will be merged into, plus its milestone if set">Target</th>
+	</tr>
+	</thead>
+	<tbody>
 <!-- PR_ROWS -->
+	</tbody>
 </table>
+</div>
 
-<p>Release phase: <b>RELEASE_PHASE</b></p>
+<div class="toolbar">
+	<button onclick="openReadyPRs()" class="open-ready-button">Open all ready PRs &nearr;</button>
+</div>
 
-<p><input type="checkbox" id="autoRefreshCheckbox" onclick="refreshSave()"/><span>Refresh automatically</span></p>
+<details class="help">
+	<summary>How this list works</summary>
 
-<p><button onclick="openMergeablePRs()" class="mergeable-button">Open All Mergeable PRs</button></p>
+	<h4>Which PRs show up here?</h4>
+	<p>A pull request appears once it is open, not a draft, approved by
+	reviewers, and passing CI. In other words: everything here is already
+	through code review &mdash; this page tracks the final wait before a release
+	engineer merges it.</p>
 
-<p>
-<a href='https://github.com/REPOSITORY_PATH/actions/workflows/update.yaml'>
-<img src='https://github.com/REPOSITORY_PATH/actions/workflows/update.yaml/badge.svg'>
-</a>
-</p>
+	<h4>The three merge gates</h4>
+	<p>A PR is merged when all three gates pass:</p>
+	<ol>
+		<li><b>Conflict-free</b> &mdash; it applies cleanly on its target branch.
+		If not, the author needs to rebase.</li>
+		<li><b>Assignee approval</b> &mdash; the assigned maintainer approved it.
+		This gate passes automatically for hotfixes, for PRs with no assignee,
+		and when the author is the assignee.</li>
+		<li><b>Review time</b> &mdash; a minimum review window since the PR became
+		ready for review, so that everyone has a fair chance to comment:
+		48 business hours normally, 4 hours for <i>trivial</i> PRs, none for
+		<i>hotfixes</i>.</li>
+	</ol>
+	<p>The <b>Status</b> column sums this up: <span class="pill pill-ready">Ready</span>
+	means all gates pass and the PR will be picked up in the next merge round;
+	<span class="pill pill-waiting">12h left</span> means it is only waiting for
+	the review window to elapse; <span class="pill pill-blocked">Merge conflict</span>
+	or <span class="pill pill-blocked">Needs assignee approval</span> means the author or
+	assignee has to act first.</p>
+
+	<h4>Labels</h4>
+	<table>
+		<tr><td><span class="tag tag-hotfix">hotfix</span></td>
+			<td>Fixes a broken main branch; merged immediately.</td></tr>
+		<tr><td><span class="tag tag-trivial">trivial</span></td>
+			<td>Small, low-risk change; the review window is 4 hours instead of 48 business hours.</td></tr>
+		<tr><td><span class="tag tag-override">override required</span></td>
+			<td>A release engineer must override a failing or stuck required check to merge.</td></tr>
+		<tr><td><span class="tag tag-oldci">ci 42d</span></td>
+			<td>The last full CI run is that many days old; CI should be re-run before merging.</td></tr>
+		<tr><td><span class="tag tag-dismissed">review dismissed</span></td>
+			<td>A &ldquo;changes requested&rdquo; review was dismissed by someone else; merits a second look.</td></tr>
+		<tr><td><span class="tag tag-dnm">dnm</span></td>
+			<td>Do not merge.</td></tr>
+	</table>
+
+	<h4>Release phase</h4>
+	<p>During <b>integration</b>, features and fixes merge normally. After the
+	feature freeze milestone, the project is in <b>feature freeze</b>: only bug
+	fixes and release-blocking work are merged until the release is tagged, and
+	PRs milestoned for the next release wait.</p>
+</details>
+
+<footer>
+	<a href="https://github.com/REPOSITORY_PATH/actions/workflows/update.yaml">
+		<img src="https://github.com/REPOSITORY_PATH/actions/workflows/update.yaml/badge.svg" alt="update workflow status">
+	</a>
+	&mdash; generated by <a href="https://github.com/REPOSITORY_PATH">REPOSITORY_PATH</a>
+</footer>
 
 </body>
 </html>
