@@ -7,31 +7,29 @@ from dataclasses import dataclass, field
 import argparse
 import datetime
 import github
-import html
 import json
 import os
 import re
+import shutil
 import sys
 import tabulate
 import gzip
 
-token = os.environ["GITHUB_TOKEN"]
+token = os.environ.get("GITHUB_TOKEN")
 
 PER_PAGE = 100
 
-HTML_OUT = "public/index.html"
-HTML_PRE = "index.html.pre"
-HTML_POST = "index.html.post"
+# Static frontend lives in web/ and is copied verbatim into the published
+# public/ directory next to the generated data.json.
+WEB_DIR = "web"
+PUBLIC_DIR = "public"
 
+DATA_JSON_OUT = "public/data.json"
+
+# Kept for backward compatibility with any external consumers of the raw dumps.
 PR_JSON_OUT = "public/pr.json.gz"
-
 CI_JSON_OUT = "public/ci.json"
 CI_IGNORE = ["Code Coverage with codecov"]
-
-PASS = "<span class=approved>&check;</span>"
-FAIL = "<span class=blocked>&#10005;</span>"
-CANCELLED = "<span class=unknown>&#10005;</span>"
-UNKNOWN = "<span class=unknown>?</span>"
 
 UTC = datetime.timezone.utc
 
@@ -78,6 +76,30 @@ def calc_biz_hours(ref, delta):
             biz_hours += 1
 
     return biz_hours
+
+
+def add_biz_hours(ref, biz_hours):
+    """Return the wall-clock time `biz_hours` business hours after `ref`.
+
+    Mirror of calc_biz_hours, walking forward one hour at a time and only
+    counting hours that fall on a weekday. Used to turn a "hours left" review
+    countdown into a concrete ETA the frontend can render as "ready ~Mon 14:00".
+    """
+    if biz_hours <= 0:
+        return ref
+
+    result = ref
+    remaining = biz_hours
+    # Bound the loop generously (a couple of calendar weeks) to avoid ever
+    # spinning: 48 business hours is at most ~10 calendar days.
+    for _ in range(24 * 30):
+        result = result + datetime.timedelta(hours=1)
+        if result.weekday() < 5:
+            remaining -= 1
+            if remaining <= 0:
+                break
+
+    return result
 
 
 def set_ci_age_data(repo, data):
@@ -200,74 +222,103 @@ def evaluate_criteria(repo, number, data):
                   override_required, data.ci_run_recent, dismissed]
 
 
-def table_entry(number, data):
-    pr = data.pr
-    url = pr.html_url
-    title = html.escape(pr.title)
-    author = html.escape(pr.user.login)
-    assignees = html.escape(', '.join(sorted(a.login for a in pr.assignees)))
-    approvers = html.escape(', '.join(sorted(data.approvers)))
+def pr_core(pr):
+    """Extract the plain data the frontend needs from a github PullRequest."""
+    return {
+        "title": pr.title,
+        "url": pr.html_url,
+        "author": pr.user.login,
+        "assignees": sorted(a.login for a in pr.assignees),
+        "base": pr.base.ref,
+        "milestone": pr.milestone.title if pr.milestone else None,
+    }
 
-    base = pr.base.ref
-    if pr.milestone:
-        milestone = pr.milestone.title
+
+def is_backport_branch(base):
+    return base.startswith("v") and base.endswith("-branch")
+
+
+def serialize_pr(number, core, data, now):
+    """Turn evaluated PR criteria into the structured record the UI renders.
+
+    This is the single place the merge policy is translated into the concepts
+    the page speaks in: a `state` bucket, a plain-language `blockers` list, and
+    a concrete `ready_at` ETA. Kept independent of any github object (works off
+    `core` + the computed fields on `data`) so it can be exercised offline.
+    """
+    base = core["base"]
+    targets_main = base == "main"
+
+    kind = "hotfix" if data.hotfix else "trivial" if data.trivial else "normal"
+
+    time_elapsed = bool(data.time)
+    time_left_hours = max(0, data.time_left if data.time_left is not None else 0)
+
+    conflicts = data.rebaseable is False
+    unknown_mergeability = data.rebaseable is None
+    needs_assignee = not data.assignee
+
+    # State bucket. Order matters: anything needing a human action is "blocked"
+    # (a.k.a. "needs attention") regardless of the review clock; a healthy PR
+    # merely serving out the mandatory window is "waiting".
+    if conflicts or unknown_mergeability or needs_assignee:
+        state = "blocked"
+    elif not time_elapsed:
+        state = "waiting"
+    elif targets_main:
+        state = "ready"
     else:
-        milestone = ""
+        state = "ready_backport"
 
-    if data.rebaseable is None:
-        rebaseable = UNKNOWN
-    elif data.rebaseable == True:
-        rebaseable = PASS
-    else:
-        rebaseable = FAIL
-    assignee = PASS if data.assignee else FAIL
-    time = PASS if data.time else FAIL + f" {data.time_left}h left"
+    # Plain-language, actionable reasons a PR is not ready to merge.
+    blockers = []
+    if conflicts:
+        blockers.append("Has merge conflicts — needs a rebase")
+    if unknown_mergeability:
+        blockers.append("Mergeability is still being computed by GitHub")
+    if needs_assignee:
+        blockers.append("Needs an approval from one of its assignees")
 
-    # Determine if PR is mergeable (targets main and has three green checkmarks)
-    is_mergeable = (
-        base == "main" and
-        data.rebaseable and
-        data.assignee and
-        data.time
-    )
+    # ETA the PR becomes eligible (only meaningful while still waiting).
+    ready_at = None
+    if not time_elapsed and time_left_hours > 0:
+        if kind == "trivial":
+            eta = now + datetime.timedelta(hours=time_left_hours)
+        else:
+            eta = add_biz_hours(now, time_left_hours)
+        ready_at = eta.isoformat()
 
-    if is_mergeable:
-        tr_class = "mergeable"
-    elif (data.rebaseable is None or data.rebaseable) and data.assignee and data.time:
-        tr_class = ""
-    else:
-        tr_class = "draft"
+    tags = {
+        "hotfix": bool(data.hotfix),
+        "trivial": bool(data.trivial),
+        "override_required": bool(data.override_required),
+        "review_dismissed": bool(data.dismissed),
+        "dnm": bool(data.dnm),
+        "old_ci": not data.ci_run_recent,
+        "ci_age_days": data.ci_age_days,
+    }
 
-    tags = []
-    if data.hotfix:
-        tags.append("<span class='tag tag-hotfix'>hotfix</span>")
-    if data.trivial:
-        tags.append("<span class='tag tag-trivial'>trivial</span>")
-    if data.override_required:
-        tags.append("<span class='tag tag-override'>override required</span>")
-    if not data.ci_run_recent:
-        tags.append(f"<span class='tag tag-oldci'>ci {data.ci_age_days}d</span>")
-    if data.dismissed:
-        tags.append(f"<span class='tag tag-dismissed'>review dismissed</span>")
-    if data.dnm:
-        tags.append("<span class='tag tag-dnm'>dnm</span>")
-    tags_text = ' '.join(tags)
-
-    return f"""
-        <tr class="{tr_class}">
-            <td><a href="{url}">{number}</a></td>
-            <td><a href="{url}">{title}</a></td>
-            <td>{tags_text}</td>
-            <td>{author}</td>
-            <td>{assignees}</td>
-            <td>{approvers}</td>
-            <td>{base}</td>
-            <td>{milestone}</td>
-            <td>{rebaseable}</td>
-            <td>{assignee}</td>
-            <td>{time}</td>
-        </tr>
-        """
+    return {
+        "number": number,
+        "title": core["title"],
+        "url": core["url"],
+        "author": core["author"],
+        "assignees": core["assignees"],
+        "approvers": sorted(data.approvers) if data.approvers else [],
+        "base": base,
+        "targets_main": targets_main,
+        "is_backport": is_backport_branch(base),
+        "milestone": core["milestone"],
+        "rebaseable": data.rebaseable,
+        "assignee_approved": bool(data.assignee),
+        "time_elapsed": time_elapsed,
+        "time_left_hours": time_left_hours,
+        "ready_at": ready_at,
+        "kind": kind,
+        "tags": tags,
+        "state": state,
+        "blockers": blockers,
+    }
 
 
 def detect_feature_freeze_tag(repo):
@@ -308,6 +359,20 @@ def run_twister_canceled(runs):
     return False
 
 
+def ci_overall(runs_data):
+    """Collapse individual workflow results into one headline status."""
+    statuses = {r["status"] for r in runs_data}
+    if not statuses:
+        return "no_data"
+    if "fail" in statuses:
+        return "fail"
+    if "running" in statuses:
+        return "running"
+    if "cancelled" in statuses:
+        return "cancelled"
+    return "pass"
+
+
 def get_ci_status(repo):
     commit = repo.get_branch('main').commit
     runs = repo.get_workflow_runs(branch="main", event="push", head_sha=commit.sha)
@@ -327,45 +392,46 @@ def get_ci_status(repo):
             runs = search_runs
             break
 
-    status = []
     runs_data = []
     for run in runs:
-        html_url = run.html_url
         name = run.name
 
         if name in CI_IGNORE:
             continue
 
+        entry = {"name": name, "url": run.html_url}
+
         if run.status == "completed":
             if run.conclusion == "success":
-                status.append(f"<a href={html_url}>{name} {PASS}</a>")
-                runs_data.append({"name": name, "status": "pass"})
+                entry["status"] = "pass"
             elif run.conclusion == "failure":
-                status.append(f"<a href={html_url}>{name} {FAIL}</a>")
-                runs_data.append({"name": name, "status": "fail"})
+                entry["status"] = "fail"
             elif run.conclusion == "cancelled":
-                status.append(f"<a href={html_url}>{name} {CANCELLED}</a>")
-                runs_data.append({"name": name, "status": "cancelled"})
+                entry["status"] = "cancelled"
             else:
                 print(f"ignoring conclusion: {run.conclusion}")
+                continue
         elif run.status in ["in_progress", "queued", "waiting", "pending"]:
             delta = datetime.datetime.now(UTC) - run.run_started_at.astimezone(UTC)
             delta_mins = int(delta.total_seconds() / 60)
             jobs = list(run.jobs())
             total = len(jobs)
             completed = sum(1 for j in jobs if j.status == "completed")
-            status.append(f"<a href={html_url}>{name} ({UNKNOWN} {completed}/{total} {delta_mins}m)</a>")
-            runs_data.append({"name": name, "status": "running"})
+            entry["status"] = "running"
+            entry["progress"] = f"{completed}/{total}"
+            entry["age_mins"] = delta_mins
         else:
             print(f"ignoring status: {run.status}")
+            continue
+
+        runs_data.append(entry)
+
+    runs_data.sort(key=lambda r: r["name"])
 
     with open(CI_JSON_OUT, "w") as f:
         json.dump({"runs": runs_data}, f, indent=4)
 
-    if not status:
-        return "no data"
-    else:
-        return ' - '.join(sorted(status))
+    return {"runs": runs_data, "overall": ci_overall(runs_data)}
 
 
 def parse_args(argv):
@@ -376,6 +442,9 @@ def parse_args(argv):
     parser.add_argument("-r", "--repo", default="zephyr",
                         help="Target Github repository")
     parser.add_argument("--self", default=None, help="Self repository path")
+    parser.add_argument("--sample", action="store_true",
+                        help="Write a representative sample data.json without "
+                             "contacting GitHub (for previewing/testing the UI)")
 
     return parser.parse_args(argv)
 
@@ -457,8 +526,125 @@ def we_dont_care(pr):
 
     return False
 
+
+def write_outputs(data):
+    """Write data.json and copy the static frontend into public/."""
+    os.makedirs(PUBLIC_DIR, exist_ok=True)
+
+    with open(DATA_JSON_OUT, "w") as f:
+        json.dump(data, f, indent=2)
+
+    for name in os.listdir(WEB_DIR):
+        src = os.path.join(WEB_DIR, name)
+        if os.path.isfile(src):
+            shutil.copy(src, os.path.join(PUBLIC_DIR, name))
+
+    print(f"wrote {DATA_JSON_OUT} ({len(data['prs'])} PRs) and copied {WEB_DIR}/*")
+
+
+def make_sample(now, number, title, author, assignees, approvers, base,
+                milestone, rebaseable, assignee_ok, time_left, kind="normal",
+                override_required=False, dismissed=False, dnm=False,
+                ci_age_days=None):
+    """Build one serialized PR record from primitives, no github object needed."""
+    data = PRData(pr_raw={}, pr=None)
+    data.approvers = set(approvers)
+    data.rebaseable = rebaseable
+    data.assignee = assignee_ok
+    data.time_left = time_left
+    data.time = time_left <= 0
+    data.hotfix = kind == "hotfix"
+    data.trivial = kind == "trivial"
+    data.override_required = override_required
+    data.dismissed = dismissed
+    data.dnm = dnm
+    data.ci_age_days = ci_age_days
+    data.ci_run_recent = ci_age_days is None
+
+    core = {
+        "title": title,
+        "url": f"https://github.com/zephyrproject-rtos/zephyr/pull/{number}",
+        "author": author,
+        "assignees": sorted(assignees),
+        "base": base,
+        "milestone": milestone,
+    }
+    return serialize_pr(number, core, data, now)
+
+
+def sample_data(self_repo):
+    """A representative data.json covering every state and tag, for previews."""
+    now = datetime.datetime.now(UTC)
+
+    prs = [
+        make_sample(now, 84210, "drivers: spi: add DMA support for nRF54L",
+                    "alice", ["bob"], ["bob", "carol"], "main", "v4.2.0",
+                    True, True, 0),
+        make_sample(now, 84115, "doc: fix typo in kernel scheduling guide",
+                    "dave", ["erin"], ["erin"], "main", "v4.2.0",
+                    True, True, 0, kind="trivial"),
+        make_sample(now, 83999, "Bluetooth: host: guard against NULL conn",
+                    "frank", ["grace"], ["grace"], "main", None,
+                    True, True, 0, kind="hotfix"),
+        make_sample(now, 83880, "boards: arm: backport regulator fix",
+                    "heidi", ["ivan"], ["ivan"], "v4.1-branch", "v4.1.1",
+                    True, True, 0),
+        make_sample(now, 84240, "net: lwm2m: support for composite operations",
+                    "judy", ["mallory"], ["mallory"], "main", "v4.2.0",
+                    True, True, 34),
+        make_sample(now, 84255, "samples: sensor: tidy up console output",
+                    "niaj", ["olivia"], ["olivia"], "main", "v4.2.0",
+                    True, True, 3, kind="trivial"),
+        make_sample(now, 84260, "arch: riscv: enable PMP for user mode",
+                    "peggy", ["sybil"], ["sybil"], "main", "v4.2.0",
+                    True, True, 12, override_required=True),
+        make_sample(now, 84090, "drivers: clock_control: rework STM32 tree",
+                    "trent", ["walter"], ["walter"], "main", "v4.2.0",
+                    False, True, 0),
+        make_sample(now, 84131, "kernel: mem_slab: add runtime statistics",
+                    "victor", ["wendy"], [], "main", "v4.2.0",
+                    True, False, 0),
+        make_sample(now, 84188, "dts: bindings: document new sensor props",
+                    "craig", ["dan"], ["dan"], "main", "v4.2.0",
+                    None, True, 0),
+        make_sample(now, 83777, "logging: backend: fix dropped message count",
+                    "faythe", ["gwen"], ["gwen"], "main", "v4.2.0",
+                    True, False, 20, dismissed=True),
+        make_sample(now, 84300, "manifest: bump hal_nordic to latest",
+                    "sybil", ["trudy"], ["trudy"], "main", "v4.2.0",
+                    True, True, 0, ci_age_days=40),
+    ]
+
+    return {
+        "generated_at": now.isoformat(),
+        "repo": "zephyrproject-rtos/zephyr",
+        "self_repo": self_repo or "kartben/zephyr-merge-list",
+        "release": {"phase": "integration", "latest_tag": "v4.1.0"},
+        "ci": {
+            "overall": "pass",
+            "runs": [
+                {"name": "Run tests with twister",
+                 "url": "https://github.com/zephyrproject-rtos/zephyr/actions",
+                 "status": "pass"},
+                {"name": "Documentation Build",
+                 "url": "https://github.com/zephyrproject-rtos/zephyr/actions",
+                 "status": "pass"},
+                {"name": "BabbleSim Tests",
+                 "url": "https://github.com/zephyrproject-rtos/zephyr/actions",
+                 "status": "running", "progress": "6/9", "age_mins": 12},
+            ],
+        },
+        "prs": prs,
+    }
+
+
 def main(argv):
     args = parse_args(argv)
+
+    if args.sample:
+        data = sample_data(args.self)
+        write_outputs(data)
+        return 0
 
     auth = github.Auth.Token(os.environ.get('GITHUB_TOKEN', None))
     gh = github.Github(auth=auth, per_page=PER_PAGE)
@@ -471,8 +657,8 @@ def main(argv):
     freeze_mode, latest_tag = detect_feature_freeze_tag(repo)
     print(f"Latest tag: {latest_tag}, freeze mode: {freeze_mode}")
 
-    ci_status = get_ci_status(repo)
-    print(f"CI status: {ci_status}")
+    ci = get_ci_status(repo)
+    print(f"CI status: {ci['overall']}")
 
     all_prs = get_prs(gh, args.org, args.repo)
 
@@ -503,44 +689,42 @@ def main(argv):
     for number, data in pr_data.items():
         evaluate_criteria(repo, number, data)
 
-    with open(HTML_PRE) as f:
-        html_out = f.read()
-        timestamp = datetime.datetime.now(UTC).isoformat()
-
     debug_headers = ["number", "author", "assignees", "approvers",
                      "delta_hours", "delta_biz_hours", "time_left", "Mergeable",
                      "Hotfix", "Trivial", "Override Required", "Dismissed"]
-    debug_data = []
-    for _, data in pr_data.items():
-        debug_data.append(data.debug)
+    debug_data = [data.debug for _, data in pr_data.items()]
     print(tabulate.tabulate(debug_data, headers=debug_headers))
 
-    data_out = []
+    now = datetime.datetime.now(UTC)
+    prs_out = []
     for number, data in pr_data.items():
-        data_out.append(((data.assignee and data.time, number), data))
+        prs_out.append(serialize_pr(number, pr_core(data.pr), data, now))
 
-    for (_, number), data in sorted(data_out, key=lambda x: x[0], reverse=True):
-        html_out += table_entry(number, data)
-
-    with open(HTML_POST) as f:
-        html_out += f.read()
-
-    html_out = html_out.replace("UPDATE_TIMESTAMP", timestamp)
-    html_out = html_out.replace("CI_STATUS", ci_status)
+    # A stable, sensible default order (the frontend re-sorts): ready first,
+    # then by how soon a PR becomes eligible, then by number.
+    state_rank = {"ready": 0, "ready_backport": 1, "waiting": 2, "blocked": 3}
+    prs_out.sort(key=lambda p: (state_rank.get(p["state"], 9),
+                                p["time_left_hours"], -p["number"]))
 
     if freeze_mode:
-        phase_text = f"feature freeze (next: {latest_tag})"
+        phase = "freeze"
     else:
-        phase_text = f"integration (latest: {latest_tag})"
-    html_out = html_out.replace("RELEASE_PHASE", phase_text)
+        phase = "integration"
 
-    if args.self:
-        html_out = html_out.replace("REPOSITORY_PATH", args.self)
+    data = {
+        "generated_at": now.isoformat(),
+        "repo": f"{args.org}/{args.repo}",
+        "self_repo": args.self,
+        "release": {"phase": phase, "latest_tag": latest_tag},
+        "ci": ci,
+        "prs": prs_out,
+    }
 
-    with open(HTML_OUT, "w") as f:
-        f.write(html_out)
+    write_outputs(data)
 
     print_rate_limit(gh, args.org)
+
+    return 0
 
 
 if __name__ == "__main__":

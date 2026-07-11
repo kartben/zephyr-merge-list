@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zephyr Merge List</title>
+  <meta name="description"
+    content="Pull requests approved and ready to merge into the Zephyr main repository." />
+
+  <link rel="stylesheet"
+    href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.min.css" />
+  <link rel="stylesheet"
+    href="https://cdn.datatables.net/responsive/3.0.3/css/responsive.dataTables.min.css" />
+  <link rel="stylesheet"
+    href="https://cdn.datatables.net/rowgroup/1.5.1/css/rowGroup.dataTables.min.css" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Apply the saved theme before first paint to avoid a flash. -->
+  <script>
+    (function () {
+      var t = localStorage.getItem("theme");
+      document.documentElement.setAttribute("data-theme", t || "auto");
+    })();
+  </script>
+</head>
+
+<body>
+
+  <!-- Message of the day, populated from the project wiki (hidden unless set). -->
+  <div class="motd" id="motd" hidden>
+    <span class="motd-icon" aria-hidden="true">📣</span>
+    <span id="motd-text"></span>
+  </div>
+
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="34" height="34" role="img" aria-label="Zephyr">
+          <path d="M4 11h17a4 4 0 1 0-4-4" fill="none" stroke="currentColor"
+            stroke-width="2.4" stroke-linecap="round" />
+          <path d="M4 17h22a4 4 0 1 1-4 4" fill="none" stroke="currentColor"
+            stroke-width="2.4" stroke-linecap="round" />
+          <path d="M4 23h12a3.2 3.2 0 1 1-3.2 3.2" fill="none" stroke="currentColor"
+            stroke-width="2.4" stroke-linecap="round" />
+        </svg>
+      </span>
+      <div class="brand-text">
+        <h1>Zephyr Merge List</h1>
+        <p class="tagline">
+          Pull requests approved and ready to merge into
+          <a id="repo-link" href="https://github.com/zephyrproject-rtos/zephyr">the
+            Zephyr repository</a>.
+        </p>
+      </div>
+    </div>
+
+    <div class="header-meta">
+      <span class="pill pill-phase" id="phase-pill" tabindex="0">
+        <span class="pill-label">Phase</span><span id="phase-value">…</span>
+      </span>
+      <a class="pill pill-ci" id="ci-pill" href="#" target="_blank" rel="noopener">
+        <span class="pill-label">CI</span><span id="ci-value">…</span>
+      </a>
+      <span class="updated" id="updated" title="">Loading…</span>
+      <button class="icon-btn" id="theme-toggle" type="button"
+        aria-label="Toggle light / dark theme" title="Toggle light / dark theme">
+        <span class="theme-icon-dark" aria-hidden="true">🌙</span>
+        <span class="theme-icon-light" aria-hidden="true">☀️</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- At-a-glance counts. Each card filters the table to its state. -->
+  <section class="summary" id="summary" aria-label="Summary">
+    <button class="card card-ready" data-state="ready" type="button">
+      <span class="card-count" id="count-ready">–</span>
+      <span class="card-name">Ready to merge now</span>
+      <span class="card-desc">Meets every requirement</span>
+    </button>
+    <button class="card card-waiting" data-state="waiting" type="button">
+      <span class="card-count" id="count-waiting">–</span>
+      <span class="card-name">Waiting on review window</span>
+      <span class="card-desc">Approved — just waiting out the clock</span>
+    </button>
+    <button class="card card-attention" data-state="attention" type="button">
+      <span class="card-count" id="count-attention">–</span>
+      <span class="card-name">Needs attention</span>
+      <span class="card-desc">Something needs a human</span>
+    </button>
+  </section>
+
+  <div class="controls">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">🔎</span>
+      <input type="search" id="search" autocomplete="off"
+        placeholder="Find a PR by number, title, author or assignee…"
+        aria-label="Find a PR" />
+      <button class="search-clear" id="search-clear" type="button"
+        aria-label="Clear search" hidden>×</button>
+    </div>
+    <div class="controls-actions">
+      <span class="active-filter" id="active-filter" hidden>
+        Showing <b id="active-filter-name"></b>
+        <button class="chip-clear" id="filter-clear" type="button">clear ×</button>
+      </span>
+      <button class="btn btn-primary" id="open-ready" type="button">
+        Open all ready PRs
+      </button>
+      <button class="btn btn-ghost" id="legend-open" type="button">
+        What do these mean?
+      </button>
+    </div>
+  </div>
+
+  <main>
+    <table id="prs" class="pr-table" style="width:100%">
+      <thead>
+        <tr>
+          <th>PR</th>
+          <th>Title</th>
+          <th>Author</th>
+          <th>Reviewers</th>
+          <th>Status</th>
+          <th>Base</th>
+          <th>Milestone</th>
+          <th>Tags</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <p class="empty-state" id="empty-state" hidden></p>
+  </main>
+
+  <footer class="site-footer">
+    <label class="refresh-toggle">
+      <input type="checkbox" id="auto-refresh" />
+      <span>Refresh automatically</span>
+    </label>
+    <a id="actions-badge" href="#" target="_blank" rel="noopener">
+      <img id="actions-badge-img" alt="Build status" />
+    </a>
+    <span class="footer-note">
+      Rebuilt every few minutes ·
+      <a id="data-link" href="data.json">raw data</a>
+    </span>
+  </footer>
+
+  <!-- Legend / concept explainer. -->
+  <dialog id="legend" class="legend">
+    <form method="dialog" class="legend-head">
+      <h2>How the merge list works</h2>
+      <button class="icon-btn" value="close" aria-label="Close">×</button>
+    </form>
+
+    <div class="legend-body">
+      <p class="legend-intro">
+        This page lists pull requests that reviewers have already approved.
+        Each one is sorted into one of three states based on the project's
+        merge requirements.
+      </p>
+
+      <div class="legend-states">
+        <div class="legend-state">
+          <span class="state-dot state-ready"></span>
+          <div>
+            <b>Ready to merge now</b>
+            <p>Targets <code>main</code>, has no conflicts, is approved by an
+              assignee, and has served its full review window. A release
+              engineer can merge it right away.</p>
+          </div>
+        </div>
+        <div class="legend-state">
+          <span class="state-dot state-waiting"></span>
+          <div>
+            <b>Waiting on review window</b>
+            <p>Everything checks out — it just hasn't finished the mandatory
+              waiting period yet. The row shows when it becomes eligible.
+              Nothing for the author to do but wait.</p>
+          </div>
+        </div>
+        <div class="legend-state">
+          <span class="state-dot state-attention"></span>
+          <div>
+            <b>Needs attention</b>
+            <p>Something needs a human: merge conflicts to rebase away, or a
+              still-missing approval from an assignee. The row spells out
+              exactly what.</p>
+          </div>
+        </div>
+      </div>
+
+      <h3>The three merge requirements</h3>
+      <ul class="legend-reqs">
+        <li><span class="chip chip-ok">✓ No conflicts</span> the branch can be
+          rebased cleanly onto its base.</li>
+        <li><span class="chip chip-ok">✓ Assignee approved</span> at least one
+          assignee has approved (or the author is an assignee, or it's a
+          hotfix).</li>
+        <li><span class="chip chip-ok">✓ Review window met</span> the PR has
+          been open for review long enough (see below).</li>
+      </ul>
+
+      <h3>Review windows</h3>
+      <ul class="legend-windows">
+        <li><b>Normal PRs:</b> 48 business hours (weekends don't count).</li>
+        <li><b>Trivial</b> PRs: 4 hours.</li>
+        <li><b>Hotfix</b> PRs: no wait — eligible immediately.</li>
+      </ul>
+
+      <h3>Tags you may see</h3>
+      <ul class="legend-tags">
+        <li><span class="tag tag-hotfix">hotfix</span> urgent fix; skips the
+          review window.</li>
+        <li><span class="tag tag-trivial">trivial</span> low-risk change; only a
+          4-hour window.</li>
+        <li><span class="tag tag-override">override required</span> merges even
+          without fully green CI, by policy.</li>
+        <li><span class="tag tag-oldci">ci Nd</span> the CI run behind this PR is
+          N days old and may need a re-run.</li>
+        <li><span class="tag tag-dismissed">review dismissed</span> a
+          change-request review was dismissed by someone other than its author.</li>
+        <li><span class="tag tag-dnm">dnm</span> "do not merge" — held back
+          intentionally.</li>
+      </ul>
+
+      <h3>Release phase</h3>
+      <ul class="legend-phase">
+        <li><b>Integration:</b> normal development — features and fixes flow into
+          <code>main</code>.</li>
+        <li><b>Feature freeze:</b> approaching a release — only changes milestoned
+          for the upcoming release are listed.</li>
+      </ul>
+    </div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.30.1/moment.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/responsive/3.0.3/js/dataTables.responsive.min.js"></script>
+  <script src="https://cdn.datatables.net/rowgroup/1.5.1/js/dataTables.rowGroup.min.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
