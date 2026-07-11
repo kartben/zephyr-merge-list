@@ -79,9 +79,10 @@ MOCK_PRS = [
 ]
 
 MOCK_CI_STATUS = (
-    '<a href=#>Build with vs code &check;</a> - '
-    '<a href=#>Run tests with twister <span class=approved>&check;</span></a> - '
-    '<a href=#>Documentation build <span class=blocked>&#10005;</span></a>'
+    '<a class="ci-badge ci-pass" href="#">Build with vs code</a> '
+    '<a class="ci-badge ci-pass" href="#">Run tests with twister</a> '
+    '<a class="ci-badge ci-fail" href="#">Documentation build</a> '
+    '<a class="ci-badge ci-running" href="#">Coding guidelines 3/12 &middot; 25m</a>'
 )
 
 
@@ -89,8 +90,8 @@ def main():
     pr_data = {int(d.pr.html_url.rsplit("/", 1)[1]): d for d in MOCK_PRS}
 
     html_out = merge_list.render_html(pr_data, MOCK_CI_STATUS,
-                                      "integration (latest: v4.2.0)",
-                                      "kartben/zephyr-merge-list")
+                                      freeze_mode=False, latest_tag="v4.2.0",
+                                      repo_path="kartben/zephyr-merge-list")
 
     os.makedirs("public", exist_ok=True)
     with open(merge_list.HTML_OUT, "w") as f:

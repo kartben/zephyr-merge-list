@@ -26,11 +26,6 @@ PR_JSON_OUT = "public/pr.json.gz"
 CI_JSON_OUT = "public/ci.json"
 CI_IGNORE = ["Code Coverage with codecov"]
 
-PASS = "<span class=approved>&check;</span>"
-FAIL = "<span class=blocked>&#10005;</span>"
-CANCELLED = "<span class=unknown>&#10005;</span>"
-UNKNOWN = "<span class=unknown>?</span>"
-
 UTC = datetime.timezone.utc
 
 CI_RUN_NAME = "Run tests with twister"
@@ -198,6 +193,86 @@ def evaluate_criteria(repo, number, data):
                   override_required, data.ci_run_recent, dismissed]
 
 
+def merge_status(data):
+    """Collapse the three merge gates into one status for display.
+
+    Returns (status, label, hint) where status is one of "ready", "waiting",
+    "blocked" or "unknown", label is the short text shown in the status pill
+    and hint its tooltip.
+    """
+    if data.rebaseable is False:
+        return ("blocked", "Merge conflict",
+                "Does not apply cleanly on its target branch: "
+                "the author needs to rebase")
+    if not data.assignee:
+        return ("blocked", "Needs assignee",
+                "Waiting for an assignee to approve the PR")
+    if not data.time:
+        return ("waiting", f"{data.time_left}h left",
+                "All that is missing is for the minimum review window "
+                "to elapse")
+    if data.rebaseable is None:
+        return ("unknown", "Checking",
+                "GitHub has not reported yet whether this PR applies "
+                "cleanly on its target branch")
+    return ("ready", "Ready", "Passes all three merge gates: "
+            "will be picked up in the next merge round")
+
+
+def gate_cell(css, symbol, hint):
+    """One table cell in the merge gate columns: a symbol plus a tooltip."""
+    return (f'<td class="gate"><span class="{css}" '
+            f'title="{hint}">{symbol}</span></td>')
+
+
+def render_gates(data):
+    """Render the three merge gate cells: conflicts, approval, review time."""
+    if data.rebaseable is None:
+        conflict = gate_cell("gate-unknown", "?",
+                             "Mergeability not reported by GitHub yet")
+    elif data.rebaseable:
+        conflict = gate_cell("gate-pass", "&check;", "No merge conflicts")
+    else:
+        conflict = gate_cell("gate-fail", "&#10005;",
+                             "Has merge conflicts: needs a rebase")
+
+    if data.assignee:
+        approval = gate_cell("gate-pass", "&check;",
+                             "Approved by an assignee, or no assignee "
+                             "approval required")
+    else:
+        approval = gate_cell("gate-fail", "&#10005;",
+                             "No approval from an assignee yet")
+
+    if data.time:
+        time = gate_cell("gate-pass", "&check;",
+                         "The minimum review window has elapsed")
+    else:
+        time = gate_cell("gate-wait", f"{data.time_left}h",
+                         "Time before the minimum review window elapses: "
+                         "48 business hours, or 4 hours for trivial PRs")
+
+    return conflict + approval + time
+
+
+def render_tags(data):
+    """Render the label chips displayed next to the PR title."""
+    tags = []
+    if data.hotfix:
+        tags.append('<span class="tag tag-hotfix">hotfix</span>')
+    if data.trivial:
+        tags.append('<span class="tag tag-trivial">trivial</span>')
+    if data.override_required:
+        tags.append('<span class="tag tag-override">override required</span>')
+    if not data.ci_run_recent:
+        tags.append(f'<span class="tag tag-oldci">ci {data.ci_age_days}d</span>')
+    if data.dismissed:
+        tags.append('<span class="tag tag-dismissed">review dismissed</span>')
+    if data.dnm:
+        tags.append('<span class="tag tag-dnm">dnm</span>')
+    return ' '.join(tags)
+
+
 def table_entry(number, data):
     pr = data.pr
     url = pr.html_url
@@ -207,89 +282,70 @@ def table_entry(number, data):
     approvers = html.escape(', '.join(sorted(data.approvers)))
 
     base = pr.base.ref
+    target = base
     if pr.milestone:
-        milestone = pr.milestone.title
-    else:
-        milestone = ""
+        target += f' <span class="muted">{pr.milestone.title}</span>'
 
-    if data.rebaseable is None:
-        rebaseable = UNKNOWN
-    elif data.rebaseable == True:
-        rebaseable = PASS
-    else:
-        rebaseable = FAIL
-    assignee = PASS if data.assignee else FAIL
-    time = PASS if data.time else FAIL + f" {data.time_left}h left"
-
-    # Determine if PR is mergeable (targets main and has three green checkmarks)
-    is_mergeable = (
-        base == "main" and
-        data.rebaseable and
-        data.assignee and
-        data.time
-    )
-
-    if is_mergeable:
-        tr_class = "mergeable"
-    elif (data.rebaseable is None or data.rebaseable) and data.assignee and data.time:
-        tr_class = ""
-    else:
-        tr_class = "draft"
-
-    tags = []
-    if data.hotfix:
-        tags.append("<span class='tag tag-hotfix'>hotfix</span>")
-    if data.trivial:
-        tags.append("<span class='tag tag-trivial'>trivial</span>")
-    if data.override_required:
-        tags.append("<span class='tag tag-override'>override required</span>")
-    if not data.ci_run_recent:
-        tags.append(f"<span class='tag tag-oldci'>ci {data.ci_age_days}d</span>")
-    if data.dismissed:
-        tags.append(f"<span class='tag tag-dismissed'>review dismissed</span>")
-    if data.dnm:
-        tags.append("<span class='tag tag-dnm'>dnm</span>")
-    tags_text = ' '.join(tags)
+    status, label, hint = merge_status(data)
 
     return f"""
-        <tr class="{tr_class}">
-            <td><a href="{url}">{number}</a></td>
-            <td><a href="{url}">{title}</a></td>
-            <td>{tags_text}</td>
+        <tr class="status-{status}" data-status="{status}" data-base="{base}">
+            <td class="num"><a href="{url}">{number}</a></td>
+            <td><a href="{url}">{title}</a> {render_tags(data)}</td>
+            <td><span class="pill pill-{status}" title="{hint}">{label}</span></td>
+            {render_gates(data)}
             <td>{author}</td>
             <td>{assignees}</td>
             <td>{approvers}</td>
-            <td>{base}</td>
-            <td>{milestone}</td>
-            <td>{rebaseable}</td>
-            <td>{assignee}</td>
-            <td>{time}</td>
+            <td>{target}</td>
         </tr>
         """
 
 
-def render_html(pr_data, ci_status, phase_text, repo_path):
+def render_html(pr_data, ci_status, freeze_mode, latest_tag, repo_path):
     """Fill the HTML template with one table row per PR plus page metadata.
 
-    PRs that pass the assignee and time criteria sort first, newest first
-    within each group.
+    Rows are ordered ready first, then waiting (shortest wait first), then
+    blocked; newest PR first within each group.
     """
     with open(HTML_TEMPLATE) as f:
         template = f.read()
 
+    status_order = {"ready": 0, "waiting": 1, "unknown": 2, "blocked": 3}
+
     def sort_key(item):
         number, data = item
-        return (data.assignee and data.time, number)
+        status = merge_status(data)[0]
+        wait = data.time_left if status == "waiting" else 0
+        return (status_order[status], wait, -number)
 
     rows = ""
-    for number, data in sorted(pr_data.items(), key=sort_key, reverse=True):
+    for number, data in sorted(pr_data.items(), key=sort_key):
         rows += table_entry(number, data)
+
+    ready_count = sum(1 for data in pr_data.values()
+                      if merge_status(data)[0] == "ready")
+
+    if freeze_mode:
+        phase = "Feature freeze"
+        phase_detail = f"next release: {latest_tag}"
+        phase_hint = ("Only bug fixes and release-blocking changes are "
+                      "merged until the release is tagged")
+    else:
+        phase = "Integration"
+        phase_detail = f"latest release: {latest_tag}"
+        phase_hint = "New features and fixes are merged normally"
 
     html_out = template.replace(HTML_ROWS_TOKEN, rows)
     html_out = html_out.replace("UPDATE_TIMESTAMP",
                                 datetime.datetime.now(UTC).isoformat())
     html_out = html_out.replace("CI_STATUS", ci_status)
-    html_out = html_out.replace("RELEASE_PHASE", phase_text)
+    html_out = html_out.replace("READY_COUNT", str(ready_count))
+    html_out = html_out.replace("TOTAL_COUNT", str(len(pr_data)))
+    # Longest token first: the other two start with "RELEASE_PHASE".
+    html_out = html_out.replace("RELEASE_PHASE_DETAIL", phase_detail)
+    html_out = html_out.replace("RELEASE_PHASE_HINT", phase_hint)
+    html_out = html_out.replace("RELEASE_PHASE", phase)
     if repo_path:
         html_out = html_out.replace("REPOSITORY_PATH", repo_path)
 
@@ -362,15 +418,18 @@ def get_ci_status(repo):
         if name in CI_IGNORE:
             continue
 
+        def badge(css, text):
+            return f'<a class="ci-badge {css}" href="{html_url}">{text}</a>'
+
         if run.status == "completed":
             if run.conclusion == "success":
-                status.append(f"<a href={html_url}>{name} {PASS}</a>")
+                status.append(badge("ci-pass", name))
                 runs_data.append({"name": name, "status": "pass"})
             elif run.conclusion == "failure":
-                status.append(f"<a href={html_url}>{name} {FAIL}</a>")
+                status.append(badge("ci-fail", name))
                 runs_data.append({"name": name, "status": "fail"})
             elif run.conclusion == "cancelled":
-                status.append(f"<a href={html_url}>{name} {CANCELLED}</a>")
+                status.append(badge("ci-cancelled", name))
                 runs_data.append({"name": name, "status": "cancelled"})
             else:
                 print(f"ignoring conclusion: {run.conclusion}")
@@ -380,7 +439,8 @@ def get_ci_status(repo):
             jobs = list(run.jobs())
             total = len(jobs)
             completed = sum(1 for j in jobs if j.status == "completed")
-            status.append(f"<a href={html_url}>{name} ({UNKNOWN} {completed}/{total} {delta_mins}m)</a>")
+            status.append(badge("ci-running",
+                                f"{name} {completed}/{total} &middot; {delta_mins}m"))
             runs_data.append({"name": name, "status": "running"})
         else:
             print(f"ignoring status: {run.status}")
@@ -389,9 +449,9 @@ def get_ci_status(repo):
         json.dump({"runs": runs_data}, f, indent=4)
 
     if not status:
-        return "no data"
+        return '<span class="muted">no data</span>'
     else:
-        return ' - '.join(sorted(status))
+        return ' '.join(sorted(status))
 
 
 def parse_args(argv):
@@ -537,12 +597,8 @@ def main(argv):
         debug_data.append(data.debug)
     print(tabulate.tabulate(debug_data, headers=debug_headers))
 
-    if freeze_mode:
-        phase_text = f"feature freeze (next: {latest_tag})"
-    else:
-        phase_text = f"integration (latest: {latest_tag})"
-
-    html_out = render_html(pr_data, ci_status, phase_text, args.self)
+    html_out = render_html(pr_data, ci_status, freeze_mode, latest_tag,
+                           args.self)
 
     with open(HTML_OUT, "w") as f:
         f.write(html_out)
