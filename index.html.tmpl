@@ -176,6 +176,47 @@ a:hover { text-decoration: underline; }
 	margin: 12px 0;
 }
 
+/* ---- Filter controls ---------------------------------------------------- */
+
+.controls {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin: 12px 0;
+}
+
+#pr-search {
+	padding: 6px 12px;
+	min-width: 280px;
+	background: var(--panel);
+	color: var(--fg);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	font-size: 13px;
+}
+#pr-search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.chip {
+	padding: 4px 12px;
+	background: var(--panel);
+	color: var(--muted);
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.chip.active {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--bg);
+}
+.chip .count { font-weight: 400; opacity: 0.8; }
+
 /* ---- Table ------------------------------------------------------------- */
 
 .table-wrap {
@@ -203,6 +244,13 @@ a:hover { text-decoration: underline; }
 	white-space: nowrap;
 	cursor: help;
 }
+
+/* Sortable columns: pointer cursor plus an arrow when a sort is active. */
+.prs thead th.sortable { cursor: pointer; user-select: none; }
+.prs thead th.sortable[aria-sort="ascending"]::after { content: " \25B4"; }
+.prs thead th.sortable[aria-sort="descending"]::after { content: " \25BE"; }
+
+.prs tfoot td { color: var(--muted); text-align: center; padding: 16px; }
 
 .prs tbody tr:hover { background: var(--row-hover); }
 .prs tbody tr:last-child td { border-bottom: none; }
@@ -362,11 +410,89 @@ function openReadyPRs() {
 	});
 }
 
+/* Text search plus status chips; a row must match both to stay visible. */
+function setupFilters() {
+	const search = document.getElementById("pr-search");
+	const chips = document.querySelectorAll("#status-chips .chip");
+	const rows = document.querySelectorAll("#pr-table tbody tr");
+	const noMatch = document.getElementById("no-match");
+
+	chips.forEach((chip) => {
+		const status = chip.dataset.status;
+		const count = status
+			? document.querySelectorAll(`#pr-table tbody tr[data-status="${status}"]`).length
+			: rows.length;
+		chip.insertAdjacentHTML("beforeend", ` <span class="count">${count}</span>`);
+	});
+
+	function apply() {
+		const text = search.value.trim().toLowerCase();
+		const status = document.querySelector("#status-chips .active").dataset.status;
+
+		let shown = 0;
+		rows.forEach((row) => {
+			const match =
+				(!status || row.dataset.status == status) &&
+				(!text || row.textContent.toLowerCase().includes(text));
+			row.hidden = !match;
+			shown += match;
+		});
+		noMatch.hidden = shown > 0;
+	}
+
+	search.addEventListener("input", apply);
+	chips.forEach((chip) => {
+		chip.addEventListener("click", () => {
+			chips.forEach((c) => c.classList.remove("active"));
+			chip.classList.add("active");
+			apply();
+		});
+	});
+}
+
+/* Click a column header to sort; click again to reverse. */
+function setupSorting() {
+	const table = document.getElementById("pr-table");
+	const statusRank = { ready: 0, waiting: 1, unknown: 2, blocked: 3 };
+
+	function sortValue(row, column, kind) {
+		if (kind == "status") {
+			// Rank by status, then by hours left within "waiting".
+			const hours = parseFloat(row.querySelector(".pill").textContent) || 0;
+			return statusRank[row.dataset.status] * 10000 + hours;
+		}
+		const text = row.cells[column].textContent.trim();
+		return kind == "number" ? parseInt(text, 10) : text.toLowerCase();
+	}
+
+	table.querySelectorAll("th.sortable").forEach((th) => {
+		th.addEventListener("click", () => {
+			const ascending = th.getAttribute("aria-sort") != "ascending";
+			table.querySelectorAll("th.sortable").forEach(
+				(other) => other.removeAttribute("aria-sort"));
+			th.setAttribute("aria-sort", ascending ? "ascending" : "descending");
+
+			const tbody = table.tBodies[0];
+			const column = th.cellIndex;
+			const kind = th.dataset.sort;
+			Array.from(tbody.rows)
+				.map((row) => [sortValue(row, column, kind), row])
+				.sort(([a], [b]) => {
+					const cmp = a < b ? -1 : a > b ? 1 : 0;
+					return ascending ? cmp : -cmp;
+				})
+				.forEach(([, row]) => tbody.appendChild(row));
+		});
+	});
+}
+
 addEventListener("DOMContentLoaded", () => {
 	loadMotd();
 	renderUpdateTime();
 	setInterval(renderUpdateTime, 30000);
 	setupAutoRefresh();
+	setupFilters();
+	setupSorting();
 });
 </script>
 
@@ -409,25 +535,40 @@ addEventListener("DOMContentLoaded", () => {
 	</div>
 </div>
 
+<div class="controls">
+	<input type="search" id="pr-search"
+		placeholder="Filter by number, title, author, branch&hellip;"
+		aria-label="Filter pull requests">
+	<div class="chips" id="status-chips" role="group" aria-label="Filter by status">
+		<button class="chip active" data-status="">All</button>
+		<button class="chip" data-status="ready">Ready</button>
+		<button class="chip" data-status="waiting">Waiting</button>
+		<button class="chip" data-status="blocked">Blocked</button>
+	</div>
+</div>
+
 <div class="table-wrap">
 <table class="prs" id="pr-table">
 	<thead>
 	<tr>
-		<th title="Pull request number">PR</th>
-		<th title="Pull request title and labels">Title</th>
-		<th title="Summary: is this PR ready to merge, and if not, why not?">Status</th>
+		<th class="sortable" data-sort="number" title="Pull request number (click to sort)">PR</th>
+		<th class="sortable" data-sort="text" title="Pull request title and labels (click to sort)">Title</th>
+		<th class="sortable" data-sort="status" title="Summary: is this PR ready to merge, and if not, why not? (click to sort)">Status</th>
 		<th class="gate-col" title="Gate 1: the PR applies cleanly on its target branch (no merge conflicts)">Conflict&#8209;free</th>
 		<th class="gate-col" title="Gate 2: an assignee approved the PR (auto-passes for hotfixes, unassigned PRs, or when the author is the assignee)">Assignee approval</th>
 		<th class="gate-col" title="Gate 3: the minimum review window has elapsed &mdash; 48 business hours, 4 hours for trivial PRs, none for hotfixes">Review time</th>
-		<th title="Who opened the PR">Author</th>
-		<th title="Maintainers assigned to shepherd the PR">Assignees</th>
-		<th title="Reviewers whose approval currently stands">Approvers</th>
-		<th title="Branch the PR will be merged into, plus its milestone if set">Target</th>
+		<th class="sortable" data-sort="text" title="Who opened the PR (click to sort)">Author</th>
+		<th class="sortable" data-sort="text" title="Maintainers assigned to shepherd the PR (click to sort)">Assignees</th>
+		<th class="sortable" data-sort="text" title="Reviewers whose approval currently stands (click to sort)">Approvers</th>
+		<th class="sortable" data-sort="text" title="Branch the PR will be merged into, plus its milestone if set (click to sort)">Target</th>
 	</tr>
 	</thead>
 	<tbody>
 <!-- PR_ROWS -->
 	</tbody>
+	<tfoot>
+	<tr id="no-match" hidden><td colspan="10">No pull requests match the current filter.</td></tr>
+	</tfoot>
 </table>
 </div>
 
