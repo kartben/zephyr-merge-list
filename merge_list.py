@@ -15,8 +15,6 @@ import sys
 import tabulate
 import gzip
 
-token = os.environ["GITHUB_TOKEN"]
-
 PER_PAGE = 100
 
 HTML_OUT = "public/index.html"
@@ -270,6 +268,34 @@ def table_entry(number, data):
         """
 
 
+def render_html(pr_data, ci_status, phase_text, repo_path):
+    """Fill the HTML template with one table row per PR plus page metadata.
+
+    PRs that pass the assignee and time criteria sort first, newest first
+    within each group.
+    """
+    with open(HTML_TEMPLATE) as f:
+        template = f.read()
+
+    def sort_key(item):
+        number, data = item
+        return (data.assignee and data.time, number)
+
+    rows = ""
+    for number, data in sorted(pr_data.items(), key=sort_key, reverse=True):
+        rows += table_entry(number, data)
+
+    html_out = template.replace(HTML_ROWS_TOKEN, rows)
+    html_out = html_out.replace("UPDATE_TIMESTAMP",
+                                datetime.datetime.now(UTC).isoformat())
+    html_out = html_out.replace("CI_STATUS", ci_status)
+    html_out = html_out.replace("RELEASE_PHASE", phase_text)
+    if repo_path:
+        html_out = html_out.replace("REPOSITORY_PATH", repo_path)
+
+    return html_out
+
+
 def detect_feature_freeze_tag(repo):
     latest_version = (0, 0, 0)
     tags = []
@@ -503,10 +529,6 @@ def main(argv):
     for number, data in pr_data.items():
         evaluate_criteria(repo, number, data)
 
-    with open(HTML_TEMPLATE) as f:
-        template = f.read()
-    timestamp = datetime.datetime.now(UTC).isoformat()
-
     debug_headers = ["number", "author", "assignees", "approvers",
                      "delta_hours", "delta_biz_hours", "time_left", "Mergeable",
                      "Hotfix", "Trivial", "Override Required", "Dismissed"]
@@ -515,26 +537,12 @@ def main(argv):
         debug_data.append(data.debug)
     print(tabulate.tabulate(debug_data, headers=debug_headers))
 
-    data_out = []
-    for number, data in pr_data.items():
-        data_out.append(((data.assignee and data.time, number), data))
-
-    rows = ""
-    for (_, number), data in sorted(data_out, key=lambda x: x[0], reverse=True):
-        rows += table_entry(number, data)
-
-    html_out = template.replace(HTML_ROWS_TOKEN, rows)
-    html_out = html_out.replace("UPDATE_TIMESTAMP", timestamp)
-    html_out = html_out.replace("CI_STATUS", ci_status)
-
     if freeze_mode:
         phase_text = f"feature freeze (next: {latest_tag})"
     else:
         phase_text = f"integration (latest: {latest_tag})"
-    html_out = html_out.replace("RELEASE_PHASE", phase_text)
 
-    if args.self:
-        html_out = html_out.replace("REPOSITORY_PATH", args.self)
+    html_out = render_html(pr_data, ci_status, phase_text, args.self)
 
     with open(HTML_OUT, "w") as f:
         f.write(html_out)
