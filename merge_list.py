@@ -164,7 +164,8 @@ def evaluate_criteria(repo, number, data):
         rebaseable = pr.rebaseable
 
     # Gate 2: approval by an assignee. Walk the reviews in chronological
-    # order so that only approvals still standing count.
+    # order so that only approvals still standing count. review.user is
+    # None for deleted accounts.
     approvers = set()
     reviews = {}
     for review in data.pr.get_reviews():
@@ -190,7 +191,9 @@ def evaluate_criteria(repo, number, data):
             reference_time = event.created_at
         elif event.event == 'review_dismissed':
             dismissed_review = event.dismissed_review
-            review = reviews[dismissed_review['review_id']]
+            review = reviews.get(dismissed_review['review_id'])
+            if not review or not review.user or not event.actor:
+                continue
 
             # Do not trigger for approval dismissal via push.
             if ('dismissal_commit_id' not in dismissed_review and
@@ -244,8 +247,7 @@ def merge_status(data):
                 "Waiting for an assignee to approve the PR")
     if not data.time:
         return ("waiting", f"{data.time_left}h left",
-                "All that is missing is for the minimum review window "
-                "to elapse")
+                "The minimum review window has not elapsed yet")
     if data.rebaseable is None:
         return ("unknown", "Checking",
                 "GitHub has not reported yet whether this PR applies "
@@ -396,6 +398,14 @@ def render_html(pr_data, ci_status, freeze_mode, latest_tag, repo_path):
     return template.replace(HTML_ROWS_TOKEN, rows)
 
 
+def version_key(version):
+    """Numeric (X, Y, Z) key for a vX.Y.Z string, or None if it is not one."""
+    match = re.match(r"^v([0-9]+)\.([0-9]+)\.([0-9]+)", version)
+    if not match:
+        return None
+    return tuple(map(int, match.groups()))
+
+
 def detect_feature_freeze_tag(repo):
     """Detect the release phase from the repository tags.
 
@@ -406,12 +416,8 @@ def detect_feature_freeze_tag(repo):
     latest_version = (0, 0, 0)
     tags = []
     for tag in repo.get_tags():
-        match = re.match(r"^v([0-9]+)\.([0-9]+)\.([0-9]+)", tag.name)
-        if not match:
-            continue
-
-        tag_version = tuple(map(int, match.groups()))
-        if tag_version[2] != 0:
+        tag_version = version_key(tag.name)
+        if not tag_version or tag_version[2] != 0:
             continue
 
         tags.append(tag.name)
@@ -437,7 +443,7 @@ def twister_canceled(runs):
 
 def ci_badge(css, url, text):
     """One CI status badge shown in the "CI on main" summary card."""
-    return f'<a class="ci-badge {css}" href="{url}">{text}</a>'
+    return f'<a class="ci-badge {css}" href="{url}">{html.escape(text)}</a>'
 
 
 def get_ci_status(repo):
@@ -467,7 +473,7 @@ def get_ci_status(repo):
             runs = search_runs
             break
 
-    status = []
+    badges = {}  # workflow name -> badge HTML, so the order is stable
     runs_data = []
     for run in runs:
         name = run.name
@@ -476,13 +482,13 @@ def get_ci_status(repo):
 
         if run.status == "completed":
             if run.conclusion == "success":
-                status.append(ci_badge("ci-pass", run.html_url, name))
+                badges[name] = ci_badge("ci-pass", run.html_url, name)
                 runs_data.append({"name": name, "status": "pass"})
             elif run.conclusion == "failure":
-                status.append(ci_badge("ci-fail", run.html_url, name))
+                badges[name] = ci_badge("ci-fail", run.html_url, name)
                 runs_data.append({"name": name, "status": "fail"})
             elif run.conclusion == "cancelled":
-                status.append(ci_badge("ci-cancelled", run.html_url, name))
+                badges[name] = ci_badge("ci-cancelled", run.html_url, name)
                 runs_data.append({"name": name, "status": "cancelled"})
             else:
                 print(f"ignoring conclusion: {run.conclusion}")
@@ -492,9 +498,9 @@ def get_ci_status(repo):
             delta_mins = int(delta.total_seconds() / 60)
             jobs = list(run.jobs())
             completed = sum(1 for job in jobs if job.status == "completed")
-            status.append(ci_badge(
+            badges[name] = ci_badge(
                 "ci-running", run.html_url,
-                f"{name} {completed}/{len(jobs)} &middot; {delta_mins}m"))
+                f"{name} {completed}/{len(jobs)} \N{MIDDLE DOT} {delta_mins}m")
             runs_data.append({"name": name, "status": "running"})
         else:
             print(f"ignoring status: {run.status}")
@@ -502,9 +508,9 @@ def get_ci_status(repo):
     with open(CI_JSON_OUT, "w") as f:
         json.dump({"runs": runs_data}, f, indent=4)
 
-    if not status:
+    if not badges:
         return '<span class="muted">no data</span>'
-    return ' '.join(sorted(status))
+    return ' '.join(badge for _, badge in sorted(badges.items()))
 
 
 QUERY = """
@@ -637,8 +643,10 @@ def main(argv):
         number = pr_raw["number"]
         milestone = pr_raw["milestone"]
 
-        # In freeze mode, PRs milestoned for the next release wait.
-        if freeze_mode and milestone and milestone["title"] > latest_tag:
+        # In freeze mode, PRs milestoned for a later release wait.
+        milestone_version = version_key(milestone["title"]) if milestone else None
+        if (freeze_mode and milestone_version and
+                milestone_version > version_key(latest_tag)):
             print(f"ignoring: {number} milestone={milestone['title']} "
                   f"> {latest_tag}")
             continue
