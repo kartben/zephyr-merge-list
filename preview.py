@@ -20,6 +20,7 @@ import merge_list
 def mock_pr(number, title, author, assignees, base="main", milestone=None):
     """Build an object that looks enough like github.PullRequest to render."""
     return SimpleNamespace(
+        number=number,
         html_url=f"https://github.com/zephyrproject-rtos/zephyr/pull/{number}",
         title=title,
         user=SimpleNamespace(login=author),
@@ -30,30 +31,20 @@ def mock_pr(number, title, author, assignees, base="main", milestone=None):
 
 
 def mock_data(number, title, author, assignees, approvers, *, base="main",
-              milestone=None, assignee=True, time=True, time_left=0,
-              rebaseable=True, hotfix=False, trivial=False,
-              override_required=False, dnm=False, ci_recent=True,
-              ci_age=None, dismissed=False):
-    data = merge_list.PRData(
+              milestone=None, **fields):
+    """Build a PRData; extra keyword arguments override its fields."""
+    values = dict(rebaseable=True, assignee=True, time=True, time_left=0,
+                  approvers=set(approvers), ci_run_recent=True)
+    values.update(fields)
+    return merge_list.PRData(
         pr_raw={},
-        pr=mock_pr(number, title, author, assignees, base, milestone))
-    data.assignee = assignee
-    data.approvers = set(approvers)
-    data.time = time
-    data.time_left = time_left
-    data.rebaseable = rebaseable
-    data.hotfix = hotfix
-    data.trivial = trivial
-    data.override_required = override_required
-    data.dnm = dnm
-    data.ci_run_recent = ci_recent
-    data.ci_age_days = ci_age
-    data.dismissed = dismissed
-    return data
+        pr=mock_pr(number, title, author, assignees, base, milestone),
+        **values)
 
 
 # One PR per interesting state: ready, waiting on time, blocked on
-# conflicts, blocked on assignee approval, tagged variants, backport.
+# conflicts, blocked on assignee approval, mergeability still unknown,
+# tagged variants, backport.
 MOCK_PRS = [
     mock_data(91234, "drivers: i2c: stm32: fix bus recovery on timeout",
               "marting", ["alicej"], ["alicej", "bobk"], milestone="v4.3.0"),
@@ -70,24 +61,26 @@ MOCK_PRS = [
     mock_data(90950, "doc: release notes: add 4.3 migration guide",
               "jackt", ["gracel"], ["gracel"], rebaseable=False,
               milestone="v4.3.0"),
+    mock_data(90900, "cmake: check CI_STATUS and READY_COUNT env overrides",
+              "nadiam", ["frankh"], ["frankh"], rebaseable=None),
     mock_data(90800, "west: update hal_nxp to fix build with new SDK",
               "kevinb", ["davidm"], ["erikw"], assignee=False,
-              ci_recent=False, ci_age=42),
+              ci_run_recent=False, ci_age_days=42),
     mock_data(90700, "samples: sensor: add bme680 polling sample",
               "lisaw", [], ["frankh"], base="v4.2-branch",
               dismissed=True, time=False, time_left=31),
 ]
 
-MOCK_CI_STATUS = (
-    '<a class="ci-badge ci-pass" href="#">Build with vs code</a> '
-    '<a class="ci-badge ci-pass" href="#">Run tests with twister</a> '
-    '<a class="ci-badge ci-fail" href="#">Documentation build</a> '
-    '<a class="ci-badge ci-running" href="#">Coding guidelines 3/12 &middot; 25m</a>'
-)
+MOCK_CI_STATUS = ' '.join([
+    merge_list.ci_badge("ci-pass", "#", "Build with vs code"),
+    merge_list.ci_badge("ci-pass", "#", "Run tests with twister"),
+    merge_list.ci_badge("ci-fail", "#", "Documentation build"),
+    merge_list.ci_badge("ci-running", "#", "Coding guidelines 3/12 \N{MIDDLE DOT} 25m"),
+])
 
 
 def main():
-    pr_data = {int(d.pr.html_url.rsplit("/", 1)[1]): d for d in MOCK_PRS}
+    pr_data = {data.pr.number: data for data in MOCK_PRS}
 
     html_out = merge_list.render_html(pr_data, MOCK_CI_STATUS,
                                       freeze_mode=False, latest_tag="v4.2.0",
