@@ -375,20 +375,25 @@ def render_html(pr_data, ci_status, freeze_mode, latest_tag, repo_path):
         phase_detail = f"latest release: {latest_tag}"
         phase_hint = "New features and fixes are merged normally"
 
-    html_out = template.replace(HTML_ROWS_TOKEN, rows)
-    html_out = html_out.replace("UPDATE_TIMESTAMP",
-                                datetime.datetime.now(UTC).isoformat())
-    html_out = html_out.replace("CI_STATUS", ci_status)
-    html_out = html_out.replace("READY_COUNT", str(ready_count))
-    html_out = html_out.replace("TOTAL_COUNT", str(len(pr_data)))
-    # Longest token first: the other two start with "RELEASE_PHASE".
-    html_out = html_out.replace("RELEASE_PHASE_DETAIL", phase_detail)
-    html_out = html_out.replace("RELEASE_PHASE_HINT", phase_hint)
-    html_out = html_out.replace("RELEASE_PHASE", phase)
-    if repo_path:
-        html_out = html_out.replace("REPOSITORY_PATH", repo_path)
+    now = datetime.datetime.now(UTC)
+    tokens = {
+        "UPDATE_TIMESTAMP": now.isoformat(timespec="seconds"),
+        "CI_STATUS": ci_status,
+        "READY_COUNT": str(ready_count),
+        "TOTAL_COUNT": str(len(pr_data)),
+        "RELEASE_PHASE": phase,
+        "RELEASE_PHASE_DETAIL": phase_detail,
+        "RELEASE_PHASE_HINT": phase_hint,
+        "REPOSITORY_PATH": repo_path or "zephyrproject-rtos/zephyr",
+        "REVIEW_WINDOW_BIZ_HOURS": str(REVIEW_WINDOW_BIZ_HOURS),
+        "REVIEW_WINDOW_TRIVIAL_HOURS": str(REVIEW_WINDOW_TRIVIAL_HOURS),
+    }
+    for name, value in tokens.items():
+        template = template.replace("{{" + name + "}}", value)
 
-    return html_out
+    # Insert the rows last: their content (PR titles, user names) is
+    # contributor-controlled and must never go through token substitution.
+    return template.replace(HTML_ROWS_TOKEN, rows)
 
 
 def detect_feature_freeze_tag(repo):
@@ -597,7 +602,9 @@ def parse_args(argv):
                         help="Target Github organisation")
     parser.add_argument("-r", "--repo", default="zephyr",
                         help="Target Github repository")
-    parser.add_argument("--self", default=None, help="Self repository path")
+    parser.add_argument("--self", default=os.environ.get("GITHUB_REPOSITORY"),
+                        help="Repository path of this generator, used for the "
+                             "footer links (default: $GITHUB_REPOSITORY)")
 
     return parser.parse_args(argv)
 

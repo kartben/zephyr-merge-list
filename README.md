@@ -9,7 +9,7 @@ periodically using GitHub actions and the output published using GitHub pages.
 - `merge_list.py`: fetches the PRs, evaluates the merge gates and renders the
   page. The module docstring describes the pipeline.
 - `index.html.tmpl`: the page itself (markup, styles and client-side JS).
-  The script fills in the `<!-- PR_ROWS -->` marker and the `UPPER_CASE`
+  The script fills in the `<!-- PR_ROWS -->` marker and the `{{UPPER_CASE}}`
   placeholder tokens. The page has no external dependencies.
 
 ## Running locally
