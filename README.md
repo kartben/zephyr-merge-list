@@ -4,6 +4,14 @@ This script produces a static HTML page with the list of PRs approved and ready
 for merge for the main Zephyr project repository. This is meant to be run
 periodically using GitHub actions and the output published using GitHub pages.
 
+## Layout
+
+- `merge_list.py`: fetches the PRs, evaluates the merge gates and renders the
+  page. The module docstring describes the pipeline.
+- `index.html.tmpl`: the page itself (markup, styles and client-side JS).
+  The script fills in the `<!-- PR_ROWS -->` marker and the `UPPER_CASE`
+  placeholder tokens. The page has no external dependencies.
+
 ## Running locally
 
 First ensure that the required Python packages are installed:
@@ -25,13 +33,12 @@ x-ratelimit-remaining: 4999
 x-ratelimit-reset: 1711729218
 x-ratelimit-used: 1
 x-ratelimit-resource: core
-ignored milestones: []
-Latest tag: v3.6.0, freeze mode: False
+Latest tag: v4.2.0, freeze mode: False
 fetch: 70900
 fetch: 70883
 ...
 $ ls public/
-index.html
+ci.json  index.html  pr.json.gz
 ```
 
 ## Resource usage
