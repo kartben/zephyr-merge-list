@@ -20,8 +20,8 @@ token = os.environ["GITHUB_TOKEN"]
 PER_PAGE = 100
 
 HTML_OUT = "public/index.html"
-HTML_PRE = "index.html.pre"
-HTML_POST = "index.html.post"
+HTML_TEMPLATE = "index.html.tmpl"
+HTML_ROWS_TOKEN = "<!-- PR_ROWS -->"
 
 PR_JSON_OUT = "public/pr.json.gz"
 
@@ -503,9 +503,9 @@ def main(argv):
     for number, data in pr_data.items():
         evaluate_criteria(repo, number, data)
 
-    with open(HTML_PRE) as f:
-        html_out = f.read()
-        timestamp = datetime.datetime.now(UTC).isoformat()
+    with open(HTML_TEMPLATE) as f:
+        template = f.read()
+    timestamp = datetime.datetime.now(UTC).isoformat()
 
     debug_headers = ["number", "author", "assignees", "approvers",
                      "delta_hours", "delta_biz_hours", "time_left", "Mergeable",
@@ -519,12 +519,11 @@ def main(argv):
     for number, data in pr_data.items():
         data_out.append(((data.assignee and data.time, number), data))
 
+    rows = ""
     for (_, number), data in sorted(data_out, key=lambda x: x[0], reverse=True):
-        html_out += table_entry(number, data)
+        rows += table_entry(number, data)
 
-    with open(HTML_POST) as f:
-        html_out += f.read()
-
+    html_out = template.replace(HTML_ROWS_TOKEN, rows)
     html_out = html_out.replace("UPDATE_TIMESTAMP", timestamp)
     html_out = html_out.replace("CI_STATUS", ci_status)
 
