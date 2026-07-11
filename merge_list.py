@@ -329,7 +329,7 @@ def table_entry(number, data):
     status, label, hint = merge_status(data)
 
     return f"""
-        <tr class="status-{status}" data-status="{status}" data-base="{base}">
+        <tr data-status="{status}" data-base="{base}">
             <td class="num"><a href="{url}">{number}</a></td>
             <td><a href="{url}">{title}</a> {render_tags(data)}</td>
             <td><span class="pill pill-{status}" title="{hint}">{label}</span></td>

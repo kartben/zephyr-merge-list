@@ -210,8 +210,7 @@ a:hover { text-decoration: underline; }
 .prs tbody tr:hover { background: var(--row-hover); }
 .prs tbody tr:last-child td { border-bottom: none; }
 
-.prs tr.status-ready { background: var(--row-ready); }
-.prs tr.status-ready:hover { background: var(--row-hover); }
+.prs tr[data-status="ready"] { background: var(--row-ready); }
 
 .prs td.num, .prs td.gate { white-space: nowrap; }
 .prs td.gate { text-align: center; }
@@ -314,11 +313,15 @@ function loadMotd() {
 }
 
 /* Show "12 minutes ago" instead of a raw ISO timestamp. */
+const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
 function renderUpdateTime() {
 	const el = document.getElementById("update-timestamp");
 	const then = Date.parse(el.getAttribute("datetime"));
+	if (isNaN(then)) {
+		return;
+	}
 	const seconds = Math.round((then - Date.now()) / 1000);
-	const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
 	let text;
 	if (Math.abs(seconds) < 60) {
@@ -348,13 +351,13 @@ function setupAutoRefresh() {
 	}, 60000);
 }
 
-/* Open every PR that is ready to merge into main, each in its own tab. */
+/* Open every ready PR currently shown in the table, each in its own tab. */
 function openReadyPRs() {
-	const rows = document.querySelectorAll(
-		'#pr-table tr[data-status="ready"][data-base="main"]');
+	const rows = [...document.querySelectorAll(
+		'#pr-table tbody tr[data-status="ready"]')].filter((row) => !row.hidden);
 
 	if (rows.length == 0) {
-		alert("No PRs are ready to merge into main right now.");
+		alert("No ready PRs in the current view.");
 		return;
 	}
 	rows.forEach((row) => {
@@ -365,18 +368,26 @@ function openReadyPRs() {
 	});
 }
 
-/* Text search plus status chips; a row must match both to stay visible. */
+/* Text search plus status chips; a row must match both to stay visible.
+ * The filter state survives the auto-refresh reload via sessionStorage. */
 function setupFilters() {
 	const search = document.getElementById("pr-search");
 	const chips = document.querySelectorAll("#status-chips .chip");
-	const rows = document.querySelectorAll("#pr-table tbody tr");
+	const rows = [...document.querySelectorAll("#pr-table tbody tr")];
 	const noMatch = document.getElementById("no-match");
 
+	const rowText = new Map(
+		rows.map((row) => [row, row.textContent.toLowerCase()]));
+
+	const counts = {};
+	rows.forEach((row) => {
+		counts[row.dataset.status] = (counts[row.dataset.status] || 0) + 1;
+	});
 	chips.forEach((chip) => {
-		const status = chip.dataset.status;
-		const count = status
-			? document.querySelectorAll(`#pr-table tbody tr[data-status="${status}"]`).length
+		const count = chip.dataset.status
+			? counts[chip.dataset.status] || 0
 			: rows.length;
+		chip.hidden = chip.hidden && count == 0;
 		chip.insertAdjacentHTML("beforeend", ` <span class="count">${count}</span>`);
 	});
 
@@ -388,11 +399,14 @@ function setupFilters() {
 		rows.forEach((row) => {
 			const match =
 				(!status || row.dataset.status == status) &&
-				(!text || row.textContent.toLowerCase().includes(text));
+				(!text || rowText.get(row).includes(text));
 			row.hidden = !match;
 			shown += match;
 		});
 		noMatch.hidden = shown > 0;
+
+		sessionStorage.setItem("filterText", text);
+		sessionStorage.setItem("filterStatus", status);
 	}
 
 	search.addEventListener("input", apply);
@@ -403,18 +417,33 @@ function setupFilters() {
 			apply();
 		});
 	});
+
+	// Restore the previous filter state, if any.
+	search.value = sessionStorage.getItem("filterText") || "";
+	const savedStatus = sessionStorage.getItem("filterStatus") || "";
+	chips.forEach((chip) => {
+		chip.classList.toggle("active", chip.dataset.status == savedStatus &&
+			!chip.hidden);
+	});
+	if (!document.querySelector("#status-chips .active")) {
+		chips[0].classList.add("active");
+	}
+	apply();
 }
 
 /* Click a column header to sort; click again to reverse. */
 function setupSorting() {
 	const table = document.getElementById("pr-table");
-	const statusRank = { ready: 0, waiting: 1, unknown: 2, blocked: 3 };
+
+	// The server renders rows ready -> waiting -> blocked, so the initial
+	// position doubles as the sort key for the Status column.
+	table.querySelectorAll("tbody tr").forEach((row, i) => {
+		row.dataset.index = i;
+	});
 
 	function sortValue(row, column, kind) {
 		if (kind == "status") {
-			// Rank by status, then by hours left within "waiting".
-			const hours = parseFloat(row.querySelector(".pill").textContent) || 0;
-			return statusRank[row.dataset.status] * 10000 + hours;
+			return Number(row.dataset.index);
 		}
 		const text = row.cells[column].textContent.trim();
 		return kind == "number" ? parseInt(text, 10) : text.toLowerCase();
@@ -499,6 +528,7 @@ addEventListener("DOMContentLoaded", () => {
 		<button class="chip" data-status="ready">Ready</button>
 		<button class="chip" data-status="waiting">Waiting</button>
 		<button class="chip" data-status="blocked">Blocked</button>
+		<button class="chip" data-status="unknown" hidden>Checking</button>
 	</div>
 </div>
 
