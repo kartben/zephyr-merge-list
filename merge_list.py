@@ -495,7 +495,7 @@ def get_ci_status(repo):
             delta = datetime.datetime.now(UTC) - \
                 run.run_started_at.astimezone(UTC)
             delta_mins = int(delta.total_seconds() / 60)
-            jobs = list(run.jobs())
+            jobs = list(run.get_jobs())
             completed = sum(1 for job in jobs if job.status == "completed")
             badges[name] = ci_badge(
                 "ci-running", run.html_url,
