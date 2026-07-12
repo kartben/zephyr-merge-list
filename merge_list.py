@@ -385,7 +385,7 @@ def render_html(pr_data, ci_status, freeze_mode, latest_tag, repo_path):
         "RELEASE_PHASE": phase,
         "RELEASE_PHASE_DETAIL": phase_detail,
         "RELEASE_PHASE_HINT": phase_hint,
-        "REPOSITORY_PATH": repo_path or "",
+        "REPOSITORY_PATH": repo_path or "zephyrproject-rtos/zephyr",
         "REVIEW_WINDOW_BIZ_HOURS": str(REVIEW_WINDOW_BIZ_HOURS),
         "REVIEW_WINDOW_TRIVIAL_HOURS": str(REVIEW_WINDOW_TRIVIAL_HOURS),
     }
