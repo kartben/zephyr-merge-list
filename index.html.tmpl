@@ -536,15 +536,35 @@ function setupFilters() {
 		const target = document.querySelector("#target-chips .active").dataset.target;
 
 		let shown = 0;
+		const candidates = [];
 		rows.forEach((row) => {
-			const match =
-				(!status || row.dataset.status == status) &&
-				(!target || row.dataset.base == target) &&
-				(!text || rowText.get(row).includes(text));
+			const matchText = !text || rowText.get(row).includes(text);
+			const matchStatus = !status || row.dataset.status == status;
+			const matchTarget = !target || row.dataset.base == target;
+
+			if (matchText) {
+				candidates.push({row, matchStatus, matchTarget});
+			}
+			const match = matchText && matchStatus && matchTarget;
 			row.hidden = !match;
 			shown += match;
 		});
 		noMatch.hidden = shown > 0;
+
+		/* Live chip counts: how many rows clicking the chip would show,
+		 * i.e. the other filters apply but the chip's own group does not. */
+		statusChips.forEach((chip) => {
+			const value = chip.dataset.status;
+			chip.querySelector(".count").textContent = candidates.filter(
+				(c) => c.matchTarget &&
+					(!value || c.row.dataset.status == value)).length;
+		});
+		targetChips.forEach((chip) => {
+			const value = chip.dataset.target;
+			chip.querySelector(".count").textContent = candidates.filter(
+				(c) => c.matchStatus &&
+					(!value || c.row.dataset.base == value)).length;
+		});
 
 		sessionStorage.setItem("filterText", text);
 		localStorage.setItem("filterStatus", status);
