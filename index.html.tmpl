@@ -444,7 +444,10 @@ function setupAutoRefresh() {
 }
 
 /* Open every ready PR currently shown in the table that targets main,
- * each in its own tab. */
+ * each in its own tab. Most browsers allow a single popup per click
+ * and silently block the rest (window.open returns null), so count
+ * the casualties and tell the user how to lift the limit instead of
+ * failing mysteriously. */
 function openReadyPRs() {
 	const rows = [...document.querySelectorAll(
 		'#pr-table tbody tr[data-status="ready"][data-base="main"]')]
@@ -454,12 +457,16 @@ function openReadyPRs() {
 		alert("No ready PRs targeting main in the current view.");
 		return;
 	}
-	rows.forEach((row) => {
+	const blocked = rows.filter((row) => {
 		const link = row.querySelector("a");
-		if (link) {
-			window.open(link.href, "_blank");
-		}
-	});
+		return link && window.open(link.href, "_blank") == null;
+	}).length;
+
+	if (blocked > 0) {
+		alert(`The browser blocked ${blocked} of ${rows.length} tabs. ` +
+			"Allow pop-ups for this site (look for the blocked pop-up " +
+			"icon in the address bar) to open all ready PRs at once.");
+	}
 }
 
 /* Text search plus status chips; a row must match both to stay visible.
