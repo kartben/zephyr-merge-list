@@ -23,6 +23,7 @@
 	--bad-bg: #fbe2e2;
 	--neutral-bg: #e8ecf2;
 	--row-ready: #effaf1;
+	--row-other: #f3f9f4;
 	--row-hover: #eef1f6;
 	--header-bg: #333f67;
 	--header-fg: #ffffff;
@@ -43,6 +44,7 @@
 		--bad-bg: #3d1a1a;
 		--neutral-bg: #232a36;
 		--row-ready: #14231a;
+		--row-other: #131c16;
 		--row-hover: #202836;
 		--header-bg: #232c4a;
 		--header-fg: #dfe4f2;
@@ -256,6 +258,10 @@ a:hover { text-decoration: underline; }
 .prs tbody tr:last-child td { border-bottom: none; }
 
 .prs tr[data-status="ready"] { background: var(--row-ready); }
+
+/* Rows not targeting main (backports, feature branches) get their own,
+ * lighter tint; it wins over the ready green so they read as one group. */
+.prs tbody tr:not([data-base="main"]) { background: var(--row-other); }
 
 .prs td.num, .prs td.gate { white-space: nowrap; }
 .prs td.gate { text-align: center; }
