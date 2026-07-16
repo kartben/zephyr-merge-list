@@ -324,10 +324,57 @@ a:hover { text-decoration: underline; }
 }
 .open-ready-button:hover { filter: brightness(1.15); }
 
-.help { margin: 16px 0; color: var(--fg); max-width: 900px; }
-.help summary { cursor: pointer; font-weight: 600; color: var(--muted); }
-.help h4 { margin: 12px 0 4px; }
+/* ---- Help dialog -------------------------------------------------------- */
+
+.help-button {
+	margin-top: 10px;
+	padding: 5px 14px;
+	background: var(--panel);
+	color: var(--accent);
+	border: 1px solid var(--accent);
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.help-button:hover { background: var(--accent); color: var(--bg); }
+
+/* Slightly larger text than the page: the dialog is meant to be read. */
+dialog.help {
+	margin: auto;
+	max-width: 720px;
+	width: calc(100vw - 48px);
+	padding: 0;
+	background: var(--panel);
+	color: var(--fg);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+	font-size: 15px;
+	line-height: 1.55;
+}
+dialog.help::backdrop { background: rgba(0, 0, 0, 0.5); }
+
+/* The padding lives on the body so clicks on the dialog element itself
+ * can only come from the backdrop (see setupHelpDialog). */
+.help-body { padding: 20px 28px 24px; }
+
+.help-header { display: flex; align-items: center; justify-content: space-between; }
+.help-header h3 { margin: 0; font-size: 19px; }
+
+.help-close {
+	padding: 2px 8px;
+	background: none;
+	color: var(--muted);
+	border: none;
+	font-size: 16px;
+	cursor: pointer;
+}
+.help-close:hover { color: var(--fg); }
+
+.help h4 { margin: 16px 0 4px; }
 .help td, .help th { padding: 2px 10px 2px 0; text-align: left; vertical-align: top; }
+.help a { color: var(--accent); }
 
 footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
 footer img { vertical-align: middle; }
@@ -518,6 +565,17 @@ function setupSorting() {
 	});
 }
 
+/* Close the help dialog when the backdrop is clicked; Esc already works
+ * natively. Clicks inside the content land on .help-body, not here. */
+function setupHelpDialog() {
+	const dialog = document.getElementById("help-dialog");
+	dialog.addEventListener("click", (event) => {
+		if (event.target == dialog) {
+			dialog.close();
+		}
+	});
+}
+
 addEventListener("DOMContentLoaded", () => {
 	loadMotd();
 	renderUpdateTime();
@@ -525,6 +583,7 @@ addEventListener("DOMContentLoaded", () => {
 	setupAutoRefresh();
 	setupFilters();
 	setupSorting();
+	setupHelpDialog();
 });
 </script>
 
@@ -538,6 +597,69 @@ addEventListener("DOMContentLoaded", () => {
 	in line to be merged into
 	<a href="https://github.com/zephyrproject-rtos/zephyr">zephyrproject-rtos/zephyr</a>.</p>
 </div>
+
+<button class="help-button"
+	onclick="document.getElementById('help-dialog').showModal()">
+	How this list works</button>
+
+<dialog class="help" id="help-dialog" aria-labelledby="help-title">
+	<div class="help-body">
+	<div class="help-header">
+		<h3 id="help-title">How this list works</h3>
+		<button class="help-close" aria-label="Close"
+			onclick="document.getElementById('help-dialog').close()">&#10005;</button>
+	</div>
+
+	<h4>Which PRs show up here?</h4>
+	<p>Every open, non-draft pull request that is approved by reviewers and
+	passing CI. Code review is done: this page tracks the final wait for a
+	release engineer to apply the project's
+	<a href="https://docs.zephyrproject.org/latest/project/release_process.html#pull-request-merge-criteria">merge criteria</a>.</p>
+
+	<h4>The three merge gates</h4>
+	<p>A PR is merged once all three pass:</p>
+	<ol>
+		<li><b>Conflict-free</b>: the PR applies cleanly on its target
+		branch, no rebase needed.</li>
+		<li><b>Assignee approval</b>: the assigned maintainer approved the
+		PR. Auto-passes for hotfixes, unassigned PRs, and authors who are
+		their own assignee.</li>
+		<li><b>Review time</b>: {{REVIEW_WINDOW_BIZ_HOURS}} business hours
+		since the PR became ready for review, so everyone gets a chance to
+		comment. {{REVIEW_WINDOW_TRIVIAL_HOURS}} hours for <i>trivial</i>
+		PRs, none for <i>hotfixes</i>.</li>
+	</ol>
+	<p>The <b>Status</b> column sums this up:
+	<span class="pill pill-ready">Ready</span> passes all gates and will be
+	picked up in the next merge round;
+	<span class="pill pill-waiting">12h left</span> is only waiting for the
+	review window; <span class="pill pill-blocked">Merge conflict</span> and
+	<span class="pill pill-blocked">Needs assignee approval</span> need the
+	author or assignee to act.</p>
+
+	<h4><a href="https://docs.zephyrproject.org/latest/project/dev_env_and_tools.html#labeling-issues-and-pull-requests-in-github">Labels</a></h4>
+	<table>
+		<tr><td><span class="tag tag-hotfix">hotfix</span></td>
+			<td>Fixes a broken main branch; merged immediately.</td></tr>
+		<tr><td><span class="tag tag-trivial">trivial</span></td>
+			<td>Small, low-risk change; the review window is {{REVIEW_WINDOW_TRIVIAL_HOURS}} hours instead of {{REVIEW_WINDOW_BIZ_HOURS}} business hours.</td></tr>
+		<tr><td><span class="tag tag-override">override required</span></td>
+			<td>A release engineer must override a failing or stuck required check to merge.</td></tr>
+		<tr><td><span class="tag tag-oldci">ci 42d</span></td>
+			<td>The last full CI run is that many days old; CI should be re-run before merging.</td></tr>
+		<tr><td><span class="tag tag-dismissed">review dismissed</span></td>
+			<td>A &ldquo;changes requested&rdquo; review was dismissed by someone else; merits a second look.</td></tr>
+		<tr><td><span class="tag tag-dnm">dnm</span></td>
+			<td>Do not merge.</td></tr>
+	</table>
+
+	<h4>Release phase</h4>
+	<p>During <b>integration</b>, features and fixes merge normally. During
+	<a href="https://docs.zephyrproject.org/latest/project/release_process.html#feature-freeze-stabilization-phase">feature
+	freeze</a>, only bug fixes and release-blocking work are merged, and PRs
+	milestoned for the next release wait.</p>
+	</div>
+</dialog>
 
 <div class="motd" id="motd" role="alert" hidden></div>
 
@@ -608,59 +730,6 @@ addEventListener("DOMContentLoaded", () => {
 <div class="toolbar">
 	<button onclick="openReadyPRs()" class="open-ready-button">Open all ready PRs &nearr;</button>
 </div>
-
-<details class="help">
-	<summary>How this list works</summary>
-
-	<h4>Which PRs show up here?</h4>
-	<p>A pull request appears once it is open, not a draft, approved by
-	reviewers, and passing CI. In other words: everything here is already
-	through code review &mdash; this page tracks the final wait before a release
-	engineer merges it.</p>
-
-	<h4>The three merge gates</h4>
-	<p>A PR is merged when all three gates pass:</p>
-	<ol>
-		<li><b>Conflict-free</b> &mdash; it applies cleanly on its target branch.
-		If not, the author needs to rebase.</li>
-		<li><b>Assignee approval</b> &mdash; the assigned maintainer approved it.
-		This gate passes automatically for hotfixes, for PRs with no assignee,
-		and when the author is the assignee.</li>
-		<li><b>Review time</b> &mdash; a minimum review window since the PR became
-		ready for review, so that everyone has a fair chance to comment:
-		{{REVIEW_WINDOW_BIZ_HOURS}} business hours normally,
-		{{REVIEW_WINDOW_TRIVIAL_HOURS}} hours for <i>trivial</i> PRs, none for
-		<i>hotfixes</i>.</li>
-	</ol>
-	<p>The <b>Status</b> column sums this up: <span class="pill pill-ready">Ready</span>
-	means all gates pass and the PR will be picked up in the next merge round;
-	<span class="pill pill-waiting">12h left</span> means it is only waiting for
-	the review window to elapse; <span class="pill pill-blocked">Merge conflict</span>
-	or <span class="pill pill-blocked">Needs assignee approval</span> means the author or
-	assignee has to act first.</p>
-
-	<h4>Labels</h4>
-	<table>
-		<tr><td><span class="tag tag-hotfix">hotfix</span></td>
-			<td>Fixes a broken main branch; merged immediately.</td></tr>
-		<tr><td><span class="tag tag-trivial">trivial</span></td>
-			<td>Small, low-risk change; the review window is {{REVIEW_WINDOW_TRIVIAL_HOURS}} hours instead of {{REVIEW_WINDOW_BIZ_HOURS}} business hours.</td></tr>
-		<tr><td><span class="tag tag-override">override required</span></td>
-			<td>A release engineer must override a failing or stuck required check to merge.</td></tr>
-		<tr><td><span class="tag tag-oldci">ci 42d</span></td>
-			<td>The last full CI run is that many days old; CI should be re-run before merging.</td></tr>
-		<tr><td><span class="tag tag-dismissed">review dismissed</span></td>
-			<td>A &ldquo;changes requested&rdquo; review was dismissed by someone else; merits a second look.</td></tr>
-		<tr><td><span class="tag tag-dnm">dnm</span></td>
-			<td>Do not merge.</td></tr>
-	</table>
-
-	<h4>Release phase</h4>
-	<p>During <b>integration</b>, features and fixes merge normally. After the
-	feature freeze milestone, the project is in <b>feature freeze</b>: only bug
-	fixes and release-blocking work are merged until the release is tagged, and
-	PRs milestoned for the next release wait.</p>
-</details>
 
 <footer>
 	<a href="https://github.com/{{REPOSITORY_PATH}}/actions/workflows/update.yaml">
