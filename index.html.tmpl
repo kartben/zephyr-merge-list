@@ -439,18 +439,27 @@ function renderUpdateTime() {
 	el.title = new Date(then).toString();
 }
 
-/* Auto-refresh: opt-in via checkbox, remembered in localStorage. */
+/* Auto-refresh: poll with a HEAD request once a minute and reload only
+ * when the page validators say a new version was actually published,
+ * so nothing on screen ever moves for nothing. */
 function setupAutoRefresh() {
-	const checkbox = document.getElementById("auto-refresh");
-	checkbox.checked = localStorage.getItem("autoRefresh") == "true";
-	checkbox.addEventListener("change", () => {
-		localStorage.setItem("autoRefresh", checkbox.checked);
-	});
-	setInterval(() => {
-		if (checkbox.checked) {
-			location.reload();
-		}
-	}, 60000);
+	let current = null;
+
+	function check() {
+		fetch(location.href, { method: "HEAD", cache: "no-store" })
+			.then((response) => {
+				const version = response.headers.get("ETag") ||
+					response.headers.get("Last-Modified");
+				if (current && version && version != current) {
+					location.reload();
+				}
+				current = version || current;
+			})
+			.catch((error) => console.log("auto-refresh: " + error));
+	}
+
+	check();
+	setInterval(check, 60000);
 }
 
 /* Open every ready PR currently shown in the table that targets main,
@@ -756,9 +765,7 @@ addEventListener("DOMContentLoaded", () => {
 		<div class="card-value">
 			<time id="update-timestamp" datetime="{{UPDATE_TIMESTAMP}}">{{UPDATE_TIMESTAMP}}</time>
 		</div>
-		<div class="card-note">
-			<label><input type="checkbox" id="auto-refresh"> refresh automatically</label>
-		</div>
+		<div class="card-note">updates automatically</div>
 	</div>
 </div>
 
