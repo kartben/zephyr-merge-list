@@ -219,6 +219,10 @@ a:hover { text-decoration: underline; }
 }
 .chip .count { font-weight: 400; opacity: 0.8; }
 
+/* The target group is set apart from the status chips by a divider. */
+#target-chips { border-left: 1px solid var(--border); padding-left: 12px; }
+.chips-label { color: var(--muted); font-size: 13px; align-self: center; }
+
 /* ---- Table ------------------------------------------------------------- */
 
 .table-wrap {
@@ -475,14 +479,41 @@ function openReadyPRs() {
 	}
 }
 
-/* Text search plus status chips; a row must match both to stay visible.
- * The chip selection is remembered across visits (localStorage); the
- * text filter only lasts for the tab. */
+/* Build one filter chip per target branch found in the table, "main"
+ * first. The chip group only appears when there is a choice to make. */
+function buildTargetChips(rows) {
+	const group = document.getElementById("target-chips");
+
+	const counts = new Map();
+	rows.forEach((row) => {
+		counts.set(row.dataset.base, (counts.get(row.dataset.base) || 0) + 1);
+	});
+
+	const bases = [...counts.keys()].sort(
+		(a, b) => (a != "main") - (b != "main") || a.localeCompare(b));
+	["", ...bases].forEach((base) => {
+		const chip = document.createElement("button");
+		chip.className = "chip";
+		chip.dataset.target = base;
+		chip.textContent = base || "All";
+		chip.insertAdjacentHTML("beforeend",
+			` <span class="count">${base ? counts.get(base) : rows.length}</span>`);
+		group.appendChild(chip);
+	});
+	group.hidden = bases.length < 2;
+}
+
+/* Text search, status chips and target branch chips; a row must match
+ * all three to stay visible. Chip selections are remembered across
+ * visits (localStorage); the text filter only lasts for the tab. */
 function setupFilters() {
 	const search = document.getElementById("pr-search");
-	const chips = document.querySelectorAll("#status-chips .chip");
 	const rows = [...document.querySelectorAll("#pr-table tbody tr")];
 	const noMatch = document.getElementById("no-match");
+
+	buildTargetChips(rows);
+	const statusChips = [...document.querySelectorAll("#status-chips .chip")];
+	const targetChips = [...document.querySelectorAll("#target-chips .chip")];
 
 	const rowText = new Map(
 		rows.map((row) => [row, row.textContent.toLowerCase()]));
@@ -491,7 +522,7 @@ function setupFilters() {
 	rows.forEach((row) => {
 		counts[row.dataset.status] = (counts[row.dataset.status] || 0) + 1;
 	});
-	chips.forEach((chip) => {
+	statusChips.forEach((chip) => {
 		const count = chip.dataset.status
 			? counts[chip.dataset.status] || 0
 			: rows.length;
@@ -502,11 +533,13 @@ function setupFilters() {
 	function apply() {
 		const text = search.value.trim().toLowerCase();
 		const status = document.querySelector("#status-chips .active").dataset.status;
+		const target = document.querySelector("#target-chips .active").dataset.target;
 
 		let shown = 0;
 		rows.forEach((row) => {
 			const match =
 				(!status || row.dataset.status == status) &&
+				(!target || row.dataset.base == target) &&
 				(!text || rowText.get(row).includes(text));
 			row.hidden = !match;
 			shown += match;
@@ -515,27 +548,34 @@ function setupFilters() {
 
 		sessionStorage.setItem("filterText", text);
 		localStorage.setItem("filterStatus", status);
+		localStorage.setItem("filterTarget", target);
 	}
 
 	search.addEventListener("input", apply);
-	chips.forEach((chip) => {
-		chip.addEventListener("click", () => {
-			chips.forEach((c) => c.classList.remove("active"));
-			chip.classList.add("active");
-			apply();
-		});
-	});
 
-	// Restore the previous filter state, if any.
-	search.value = sessionStorage.getItem("filterText") || "";
-	const savedStatus = localStorage.getItem("filterStatus") || "";
-	chips.forEach((chip) => {
-		chip.classList.toggle("active", chip.dataset.status == savedStatus &&
-			!chip.hidden);
-	});
-	if (!document.querySelector("#status-chips .active")) {
-		chips[0].classList.add("active");
+	/* One chip per group is active; clicking moves the highlight. The
+	 * previous selection is restored from localStorage, falling back
+	 * to the group's first ("All") chip when it no longer exists. */
+	function setupChips(chips, key, saved) {
+		chips.forEach((chip) => {
+			chip.addEventListener("click", () => {
+				chips.forEach((c) => c.classList.remove("active"));
+				chip.classList.add("active");
+				apply();
+			});
+			chip.classList.toggle("active",
+				chip.dataset[key] == saved && !chip.hidden);
+		});
+		if (!chips.some((chip) => chip.classList.contains("active"))) {
+			chips[0].classList.add("active");
+		}
 	}
+
+	search.value = sessionStorage.getItem("filterText") || "";
+	setupChips(statusChips, "status",
+		localStorage.getItem("filterStatus") || "");
+	setupChips(targetChips, "target",
+		localStorage.getItem("filterTarget") || "");
 	apply();
 }
 
@@ -712,6 +752,11 @@ addEventListener("DOMContentLoaded", () => {
 		<button class="chip" data-status="waiting">Waiting</button>
 		<button class="chip" data-status="blocked">Blocked</button>
 		<button class="chip" data-status="unknown" hidden>Checking</button>
+	</div>
+	<!-- Filled by setupFilters(): one chip per target branch in the table. -->
+	<div class="chips" id="target-chips" role="group"
+		aria-label="Filter by target branch" hidden>
+		<span class="chips-label">Target branch:</span>
 	</div>
 </div>
 
