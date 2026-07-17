@@ -95,9 +95,21 @@
 
 * { box-sizing: border-box; }
 
+/* App-shell layout: the body is pinned to the window and a single inner
+ * region (.scroll) does all the scrolling. 100dvh (dynamic viewport
+ * height) tracks the space actually visible, excluding the mobile address
+ * bar. This is what lets the filter row and table header stay put on a
+ * phone: a plain page-scroll + position:sticky cannot, because a table too
+ * wide for the screen balloons the layout viewport, zooms the page out and
+ * drags the "sticky" bits off the visible area. Containing the horizontal
+ * scroll inside .scroll keeps the page at device width. */
 body {
-	margin: 0 auto;
-	padding: 12px 24px 32px;
+	margin: 0;
+	padding: 0;
+	height: 100dvh;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
 	background: var(--bg);
 	color: var(--fg);
 	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -105,9 +117,24 @@ body {
 	line-height: 1.4;
 }
 
+:root { --pad: 24px; }
+
+.scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: auto;
+	/* No top padding: the sticky filter row must reach the very top of the
+	 * region, otherwise scrolling rows peek through the gap above it. The
+	 * top gap lives on the header instead (which scrolls away). */
+	padding: 0 var(--pad) 16px;
+}
+.page-header { padding-top: 12px; }
+
 /* Keep the side padding from eating the narrow screens. */
 @media (max-width: 640px) {
-	body { padding: 8px 12px 24px; }
+	:root { --pad: 12px; }
+	.scroll { padding-bottom: 12px; }
+	.page-header { padding-top: 8px; }
 }
 
 a { color: inherit; text-decoration: none; }
@@ -192,20 +219,23 @@ a:hover { text-decoration: underline; }
 
 /* ---- Filter controls ---------------------------------------------------- */
 
-/* The filter row sticks to the top of the window, and the table header
- * sticks directly below it (see .prs thead th), so both stay reachable
- * during a long scroll. --controls-h is the measured height of this row,
- * kept up to date from JS because it wraps to a different height on narrow
- * screens. */
+/* The title and summary bar scroll away with the list; the filter row and
+ * the table header (see .prs thead th) stick to the top of .scroll so they
+ * stay reachable. --controls-h is the filter row's measured height, kept
+ * current from JS because it wraps to a taller stack on narrow screens. */
 .controls {
 	display: flex;
 	align-items: center;
 	gap: 12px;
 	flex-wrap: wrap;
-	margin: 0;
-	padding: 10px 0;
+	/* Full-bleed to the region edges (its background is the page colour, so
+	 * this is invisible) so that a horizontally overflowing table cannot
+	 * peek past it in the side padding while it is pinned. */
+	margin: 0 calc(-1 * var(--pad));
+	padding: 10px var(--pad);
 	position: sticky;
 	top: 0;
+	left: 0;
 	z-index: 3;
 	background: var(--bg);
 }
@@ -251,12 +281,6 @@ a:hover { text-decoration: underline; }
 	background: var(--panel);
 	border: 1px solid var(--border);
 	border-radius: 8px;
-	/* No overflow container here: an overflow-x:auto wrapper turns into a
-	 * scroll container on both axes, which pins the sticky header to the
-	 * wrapper (that never scrolls vertically) instead of the viewport, so
-	 * it scrolls off with the page. Letting the page own the scrolling
-	 * keeps the header stuck to the top of the window; a table too wide
-	 * for a narrow screen scrolls with the page instead. */
 }
 
 .prs { border-collapse: collapse; width: 100%; }
@@ -270,7 +294,10 @@ a:hover { text-decoration: underline; }
 
 .prs thead th {
 	position: sticky;
-	top: var(--controls-h, 0px);
+	/* Overlap the sticky filter row by 1px so no hairline of a scrolling
+	 * row can bleed through the seam between them (the filter row has the
+	 * higher z-index and paints over the 1px overlap). */
+	top: calc(var(--controls-h, 0px) - 1px);
 	z-index: 1;
 	background: var(--header-bg);
 	color: var(--header-fg);
@@ -279,6 +306,11 @@ a:hover { text-decoration: underline; }
 	cursor: help;
 	padding-top: 6px;
 	padding-bottom: 6px;
+	/* Draw the header's bottom separator as an inset shadow that travels
+	 * with the sticky cell. A collapsed border stays behind at the
+	 * original scroll position and lets a row pixel bleed over the edge. */
+	border-bottom: none;
+	box-shadow: inset 0 -1px 0 var(--border);
 }
 
 /* Sortable columns: pointer cursor plus an arrow when a sort is active. */
@@ -664,11 +696,20 @@ function setupSorting() {
 
 /* Publish the sticky filter row's height so the table header can stick
  * directly below it (top: var(--controls-h)). It wraps to a taller stack
- * on narrow screens, so recompute on resize. */
-function syncStickyOffset() {
+ * on narrow screens, so keep it current with a ResizeObserver (covers the
+ * initial layout, wrapping, and font/zoom changes) plus window resize. */
+function setupStickyOffset() {
 	const controls = document.querySelector(".controls");
-	const height = controls ? controls.offsetHeight : 0;
-	document.documentElement.style.setProperty("--controls-h", height + "px");
+	if (!controls) {
+		return;
+	}
+	const publish = () => document.documentElement.style.setProperty(
+		"--controls-h", controls.offsetHeight + "px");
+	publish();
+	if (window.ResizeObserver) {
+		new ResizeObserver(publish).observe(controls);
+	}
+	addEventListener("resize", publish);
 }
 
 /* Close the help dialog when the backdrop is clicked; Esc already works
@@ -690,14 +731,15 @@ addEventListener("DOMContentLoaded", () => {
 	setupFilters();
 	setupSorting();
 	setupHelpDialog();
-	syncStickyOffset();
-	addEventListener("resize", syncStickyOffset);
+	setupStickyOffset();
 });
 </script>
 
 </head>
 
 <body>
+
+<div class="scroll">
 
 <div class="page-header">
 	<h1>Zephyr merge list</h1>
@@ -831,6 +873,8 @@ addEventListener("DOMContentLoaded", () => {
 	</a>
 	&mdash; generated by <a href="https://github.com/{{REPOSITORY_PATH}}">{{REPOSITORY_PATH}}</a>
 </footer>
+
+</div>
 
 </body>
 </html>
