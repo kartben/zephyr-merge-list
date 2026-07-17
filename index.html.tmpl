@@ -298,19 +298,6 @@ a:hover { text-decoration: underline; }
 
 .muted { color: var(--muted); }
 
-/* A ready row is tinted green (see the row rules above) and shows three
- * green gate ticks; that, not a separate status column, is how "ready"
- * reads at a glance. These swatches let the help dialog point at it. */
-.swatch-ready {
-	display: inline-block;
-	padding: 0 8px;
-	border-radius: 4px;
-	background: var(--row-ready);
-	border: 1px solid var(--ok);
-	color: var(--ok);
-	font-weight: 600;
-}
-
 /* ---- Label tags (shown next to PR titles) ------------------------------ */
 
 .tag {
@@ -632,16 +619,7 @@ function setupFilters() {
 function setupSorting() {
 	const table = document.getElementById("pr-table");
 
-	// The server renders rows ready -> waiting -> blocked, so the initial
-	// position doubles as the sort key for the Status column.
-	table.querySelectorAll("tbody tr").forEach((row, i) => {
-		row.dataset.index = i;
-	});
-
 	function sortValue(row, column, kind) {
-		if (kind == "status") {
-			return Number(row.dataset.index);
-		}
 		const text = row.cells[column].textContent.trim();
 		return kind == "number" ? parseInt(text, 10) : text.toLowerCase();
 	}
@@ -734,10 +712,9 @@ addEventListener("DOMContentLoaded", () => {
 	<p>The three gate columns show each gate at a glance: a green tick means
 	passed, a red cross means the author or assignee still needs to act, and
 	the review-time column counts down the hours left. A row whose three
-	gates are all green is <span class="swatch-ready">Ready</span> and tinted
-	green &mdash; it will be picked up in the next merge round. Use the
-	<b>Ready</b> / <b>Waiting</b> / <b>Blocked</b> chips above the table to
-	filter.</p>
+	gates are all green is tinted green and ready to merge &mdash; it will be
+	picked up in the next merge round. Use the <b>Ready</b> / <b>Waiting</b> /
+	<b>Blocked</b> chips above the table to filter.</p>
 
 	<h4><a href="https://docs.zephyrproject.org/latest/project/dev_env_and_tools.html#labeling-issues-and-pull-requests-in-github">Labels</a></h4>
 	<table>
