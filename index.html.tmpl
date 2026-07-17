@@ -94,13 +94,13 @@
 
 body {
 	margin: 0 auto;
-	padding: 16px 24px 32px;
+	padding: 12px 24px 32px;
 	max-width: 1600px;
 	background: var(--bg);
 	color: var(--fg);
 	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	font-size: 14px;
-	line-height: 1.45;
+	line-height: 1.4;
 }
 
 /* Keep the side padding from eating the narrow screens. */
@@ -113,40 +113,50 @@ a:hover { text-decoration: underline; }
 
 /* ---- Page header ------------------------------------------------------ */
 
-.page-header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.page-header h1 { margin: 8px 0 0; font-size: 24px; }
+.page-header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.page-header h1 { margin: 4px 0 0; font-size: 21px; }
 .page-header .subtitle { color: var(--muted); margin: 0; }
 
-/* ---- Summary cards ----------------------------------------------------- */
-
-.summary {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-	gap: 12px;
-	margin: 16px 0;
+/* The help is a quiet inline link, not a standalone button, so it costs
+ * no vertical space of its own. */
+.help-link {
+	padding: 0;
+	background: none;
+	border: none;
+	color: var(--accent);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+	white-space: nowrap;
 }
+.help-link:hover { text-decoration: underline; }
 
-.card {
+/* ---- Summary bar ------------------------------------------------------- */
+
+/* One compact line instead of a panel of cards: the same four facts
+ * (ready count, CI on main, release phase, last update) laid out inline. */
+.metabar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px 14px;
+	margin: 10px 0;
+	padding: 8px 14px;
 	background: var(--panel);
 	border: 1px solid var(--border);
 	border-radius: 8px;
-	padding: 10px 14px;
+	font-size: 13px;
 }
-
-.card .card-label {
-	font-size: 11px;
-	font-weight: 600;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
+.metabar .meta-label {
 	color: var(--muted);
-	margin-bottom: 4px;
+	font-weight: 600;
+	margin-right: 4px;
 }
+.metabar .meta-ready { font-size: 15px; font-weight: 600; }
+.metabar .meta-ready b { color: var(--ok); }
+.metabar .meta-sep { color: var(--border); }
 
-.card .card-value { font-size: 16px; font-weight: 600; }
-.card .card-note { font-size: 12px; color: var(--muted); }
-.card .big { font-size: 24px; color: var(--ok); }
-
-.ci-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.ci-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle; }
 
 .ci-badge {
 	display: inline-block;
@@ -235,7 +245,7 @@ a:hover { text-decoration: underline; }
 .prs { border-collapse: collapse; width: 100%; }
 
 .prs th, .prs td {
-	padding: 6px 10px;
+	padding: 3px 10px;
 	border-bottom: 1px solid var(--border);
 	text-align: left;
 	vertical-align: top;
@@ -249,6 +259,8 @@ a:hover { text-decoration: underline; }
 	font-size: 12px;
 	white-space: nowrap;
 	cursor: help;
+	padding-top: 6px;
+	padding-bottom: 6px;
 }
 
 /* Sortable columns: pointer cursor plus an arrow when a sort is active. */
@@ -278,21 +290,18 @@ a:hover { text-decoration: underline; }
 
 .muted { color: var(--muted); }
 
-/* ---- Status pills ------------------------------------------------------ */
-
-.pill {
+/* A ready row is tinted green (see the row rules above) and shows three
+ * green gate ticks; that, not a separate status column, is how "ready"
+ * reads at a glance. These swatches let the help dialog point at it. */
+.swatch-ready {
 	display: inline-block;
-	padding: 1px 9px;
-	border-radius: 999px;
-	font-size: 12px;
+	padding: 0 8px;
+	border-radius: 4px;
+	background: var(--row-ready);
+	border: 1px solid var(--ok);
+	color: var(--ok);
 	font-weight: 600;
-	white-space: nowrap;
-	cursor: default;
 }
-.pill-ready { background: var(--ok-bg); color: var(--ok); }
-.pill-waiting { background: var(--warn-bg); color: var(--warn); }
-.pill-blocked { background: var(--bad-bg); color: var(--bad); }
-.pill-unknown { background: var(--neutral-bg); color: var(--muted); }
 
 /* ---- Label tags (shown next to PR titles) ------------------------------ */
 
@@ -335,19 +344,6 @@ a:hover { text-decoration: underline; }
 .open-ready-button:hover { filter: brightness(1.15); }
 
 /* ---- Help dialog -------------------------------------------------------- */
-
-.help-button {
-	margin-top: 10px;
-	padding: 5px 14px;
-	background: var(--panel);
-	color: var(--accent);
-	border: 1px solid var(--accent);
-	border-radius: 999px;
-	font-size: 13px;
-	font-weight: 600;
-	cursor: pointer;
-}
-.help-button:hover { background: var(--accent); color: var(--bg); }
 
 /* Slightly larger text than the page: the dialog is meant to be read. */
 dialog.help {
@@ -677,12 +673,11 @@ addEventListener("DOMContentLoaded", () => {
 	<h1>Zephyr merge list</h1>
 	<p class="subtitle">Open pull requests that are approved, pass CI, and are
 	in line to be merged into
-	<a href="https://github.com/zephyrproject-rtos/zephyr">zephyrproject-rtos/zephyr</a>.</p>
+	<a href="https://github.com/zephyrproject-rtos/zephyr">zephyrproject-rtos/zephyr</a>.
+	<button class="help-link"
+		onclick="document.getElementById('help-dialog').showModal()">How this list
+		works</button></p>
 </div>
-
-<button class="help-button"
-	onclick="document.getElementById('help-dialog').showModal()">
-	How this list works</button>
 
 <dialog class="help" id="help-dialog" aria-labelledby="help-title">
 	<div class="help-body">
@@ -711,13 +706,13 @@ addEventListener("DOMContentLoaded", () => {
 		comment. {{REVIEW_WINDOW_TRIVIAL_HOURS}} hours for <i>trivial</i>
 		PRs, none for <i>hotfixes</i>.</li>
 	</ol>
-	<p>The <b>Status</b> column sums this up:
-	<span class="pill pill-ready">Ready</span> passes all gates and will be
-	picked up in the next merge round;
-	<span class="pill pill-waiting">12h left</span> is only waiting for the
-	review window; <span class="pill pill-blocked">Merge conflict</span> and
-	<span class="pill pill-blocked">Needs assignee approval</span> need the
-	author or assignee to act.</p>
+	<p>The three gate columns show each gate at a glance: a green tick means
+	passed, a red cross means the author or assignee still needs to act, and
+	the review-time column counts down the hours left. A row whose three
+	gates are all green is <span class="swatch-ready">Ready</span> and tinted
+	green &mdash; it will be picked up in the next merge round. Use the
+	<b>Ready</b> / <b>Waiting</b> / <b>Blocked</b> chips above the table to
+	filter.</p>
 
 	<h4><a href="https://docs.zephyrproject.org/latest/project/dev_env_and_tools.html#labeling-issues-and-pull-requests-in-github">Labels</a></h4>
 	<table>
@@ -745,28 +740,14 @@ addEventListener("DOMContentLoaded", () => {
 
 <div class="motd" id="motd" role="alert" hidden></div>
 
-<div class="summary">
-	<div class="card">
-		<div class="card-label">Ready to merge</div>
-		<div class="card-value"><span class="big">{{READY_COUNT}}</span> of {{TOTAL_COUNT}} listed</div>
-		<div class="card-note">PRs that pass all three merge gates</div>
-	</div>
-	<div class="card">
-		<div class="card-label">CI on main</div>
-		<div class="ci-badges">{{CI_STATUS}}</div>
-	</div>
-	<div class="card">
-		<div class="card-label">Release phase</div>
-		<div class="card-value" title="{{RELEASE_PHASE_HINT}}">{{RELEASE_PHASE}}</div>
-		<div class="card-note">{{RELEASE_PHASE_DETAIL}}</div>
-	</div>
-	<div class="card">
-		<div class="card-label">Last updated</div>
-		<div class="card-value">
-			<time id="update-timestamp" datetime="{{UPDATE_TIMESTAMP}}">{{UPDATE_TIMESTAMP}}</time>
-		</div>
-		<div class="card-note">updates automatically</div>
-	</div>
+<div class="metabar">
+	<span class="meta-ready"><b>{{READY_COUNT}}</b> of {{TOTAL_COUNT}} ready to merge</span>
+	<span class="meta-sep">|</span>
+	<span><span class="meta-label">CI on main:</span><span class="ci-badges">{{CI_STATUS}}</span></span>
+	<span class="meta-sep">|</span>
+	<span title="{{RELEASE_PHASE_HINT}}"><span class="meta-label">Phase:</span>{{RELEASE_PHASE}} <span class="muted">&middot; {{RELEASE_PHASE_DETAIL}}</span></span>
+	<span class="meta-sep">|</span>
+	<span><span class="meta-label">Updated</span><time id="update-timestamp" datetime="{{UPDATE_TIMESTAMP}}">{{UPDATE_TIMESTAMP}}</time></span>
 </div>
 
 <div class="controls">
@@ -793,7 +774,6 @@ addEventListener("DOMContentLoaded", () => {
 	<tr>
 		<th class="sortable" data-sort="number" title="Pull request number (click to sort)">PR</th>
 		<th class="sortable" data-sort="text" title="Pull request title and labels (click to sort)">Title</th>
-		<th class="sortable" data-sort="status" title="Summary: is this PR ready to merge, and if not, why not? (click to sort)">Status</th>
 		<th class="gate-col" title="Gate 1: the PR applies cleanly on its target branch (no merge conflicts)">Conflict&#8209;free</th>
 		<th class="gate-col" title="Gate 2: an assignee approved the PR (auto-passes for hotfixes, unassigned PRs, or when the author is the assignee)">Assignee approval</th>
 		<th class="gate-col" title="Gate 3: the minimum review window has elapsed &mdash; {{REVIEW_WINDOW_BIZ_HOURS}} business hours, {{REVIEW_WINDOW_TRIVIAL_HOURS}} hours for trivial PRs, none for hotfixes">Review time</th>
@@ -807,7 +787,7 @@ addEventListener("DOMContentLoaded", () => {
 <!-- PR_ROWS -->
 	</tbody>
 	<tfoot>
-	<tr id="no-match" hidden><td colspan="10">No pull requests match the current filter.</td></tr>
+	<tr id="no-match" hidden><td colspan="9">No pull requests match the current filter.</td></tr>
 	</tfoot>
 </table>
 </div>

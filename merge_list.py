@@ -327,13 +327,17 @@ def table_entry(number, data):
         milestone = html.escape(pr.milestone.title)
         target += f' <span class="muted">{milestone}</span>'
 
-    status, label, hint = merge_status(data)
+    # data-status still drives the filter chips, the green tint of ready rows
+    # and "Open all ready PRs", but the three gate columns are the single
+    # visible source of truth: a separate status column would just repeat
+    # them (the review-time gate and its "12h left", the assignee gate and
+    # "Needs assignee approval").
+    status = merge_status(data)[0]
 
     return f"""
         <tr data-status="{status}" data-base="{base}">
             <td class="num"><a href="{url}">{number}</a></td>
             <td><a href="{url}">{title}</a> {render_tags(data)}</td>
-            <td><span class="pill pill-{status}" title="{hint}">{label}</span></td>
             {render_gates(data)}
             <td>{author}</td>
             <td>{assignees}</td>
