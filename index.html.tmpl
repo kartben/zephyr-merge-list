@@ -230,12 +230,14 @@ a:hover { text-decoration: underline; }
 	flex-wrap: wrap;
 	/* Full-bleed to the region edges (its background is the page colour, so
 	 * this is invisible) so that a horizontally overflowing table cannot
-	 * peek past it in the side padding while it is pinned. */
+	 * peek past it in the side padding while it is pinned. left is offset by
+	 * -pad so, when the region is scrolled sideways, it pins to the true
+	 * edge of the window rather than to the padding edge. */
 	margin: 0 calc(-1 * var(--pad));
 	padding: 10px var(--pad);
 	position: sticky;
 	top: 0;
-	left: 0;
+	left: calc(-1 * var(--pad));
 	z-index: 3;
 	background: var(--bg);
 }
@@ -281,6 +283,11 @@ a:hover { text-decoration: underline; }
 	background: var(--panel);
 	border: 1px solid var(--border);
 	border-radius: 8px;
+	/* Full-bleed to the region edges: a horizontally scrolling table would
+	 * otherwise show its rows through the region's side padding. The outer
+	 * columns get that padding back (below) so their content still lines up
+	 * with the rest of the page. */
+	margin: 0 calc(-1 * var(--pad));
 }
 
 .prs { border-collapse: collapse; width: 100%; }
@@ -291,6 +298,11 @@ a:hover { text-decoration: underline; }
 	text-align: left;
 	vertical-align: top;
 }
+
+/* Line the outer columns up with the rest of the page, since the table
+ * itself is full-bleed to the region edges. */
+.prs th:first-child, .prs td:first-child { padding-left: var(--pad); }
+.prs th:last-child, .prs td:last-child { padding-right: var(--pad); }
 
 .prs thead th {
 	position: sticky;
