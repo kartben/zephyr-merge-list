@@ -192,12 +192,22 @@ a:hover { text-decoration: underline; }
 
 /* ---- Filter controls ---------------------------------------------------- */
 
+/* The filter row sticks to the top of the window, and the table header
+ * sticks directly below it (see .prs thead th), so both stay reachable
+ * during a long scroll. --controls-h is the measured height of this row,
+ * kept up to date from JS because it wraps to a different height on narrow
+ * screens. */
 .controls {
 	display: flex;
 	align-items: center;
 	gap: 12px;
 	flex-wrap: wrap;
-	margin: 12px 0;
+	margin: 0;
+	padding: 10px 0;
+	position: sticky;
+	top: 0;
+	z-index: 3;
+	background: var(--bg);
 }
 
 #pr-search {
@@ -260,7 +270,7 @@ a:hover { text-decoration: underline; }
 
 .prs thead th {
 	position: sticky;
-	top: 0;
+	top: var(--controls-h, 0px);
 	z-index: 1;
 	background: var(--header-bg);
 	color: var(--header-fg);
@@ -652,6 +662,15 @@ function setupSorting() {
 	});
 }
 
+/* Publish the sticky filter row's height so the table header can stick
+ * directly below it (top: var(--controls-h)). It wraps to a taller stack
+ * on narrow screens, so recompute on resize. */
+function syncStickyOffset() {
+	const controls = document.querySelector(".controls");
+	const height = controls ? controls.offsetHeight : 0;
+	document.documentElement.style.setProperty("--controls-h", height + "px");
+}
+
 /* Close the help dialog when the backdrop is clicked; Esc already works
  * natively. Clicks inside the content land on .help-body, not here. */
 function setupHelpDialog() {
@@ -671,6 +690,8 @@ addEventListener("DOMContentLoaded", () => {
 	setupFilters();
 	setupSorting();
 	setupHelpDialog();
+	syncStickyOffset();
+	addEventListener("resize", syncStickyOffset);
 });
 </script>
 
