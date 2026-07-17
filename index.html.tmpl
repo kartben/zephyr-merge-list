@@ -22,32 +22,37 @@
 	--bad: #b42323;
 	--bad-bg: #fbe2e2;
 	--neutral-bg: #e8ecf2;
-	--row-ready: #effaf1;
-	--row-other: #f3f9f4;
-	--row-hover: #eef1f6;
+	--stripe: #eef1f6;          /* even-row zebra band */
+	--row-ready: #e4f6ea;       /* ready rows, overrides the zebra band */
+	--row-hover: #e2e8f2;
+	--target-accent: #9fb0cb;   /* left edge on rows not targeting main */
 	--header-bg: #333f67;
 	--header-fg: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
 	:root {
-		--bg: #0e1116;
-		--panel: #171c24;
-		--fg: #e3e7ee;
-		--muted: #98a4b8;
-		--border: #2c3442;
-		--accent: #a97ff0;
-		--ok: #4ecb71;
-		--ok-bg: #17311d;
-		--warn: #e8c341;
-		--warn-bg: #37300e;
-		--bad: #f47070;
-		--bad-bg: #3d1a1a;
-		--neutral-bg: #232a36;
-		--row-ready: #14231a;
-		--row-other: #131c16;
-		--row-hover: #202836;
-		--header-bg: #232c4a;
-		--header-fg: #dfe4f2;
+		/* Lifted off pure black: the page, the panel and the zebra band sit
+		 * on distinct, clearly separated steps so nothing reads as
+		 * "dark on dark". */
+		--bg: #10151d;
+		--panel: #1e2735;
+		--fg: #e8ecf4;
+		--muted: #a3b0c6;
+		--border: #38445a;
+		--accent: #b48cf5;
+		--ok: #56d47b;
+		--ok-bg: #1c3a28;
+		--warn: #edc84f;
+		--warn-bg: #3d3410;
+		--bad: #f77f7f;
+		--bad-bg: #45201f;
+		--neutral-bg: #2b3547;
+		--stripe: #262f40;          /* even-row zebra band, a step above panel */
+		--row-ready: #204a30;       /* clearly green, not near-black */
+		--row-hover: #313d52;
+		--target-accent: #5b6c9c;   /* left edge on rows not targeting main */
+		--header-bg: #2c3759;
+		--header-fg: #e9eef9;
 	}
 }
 
@@ -270,14 +275,23 @@ a:hover { text-decoration: underline; }
 
 .prs tfoot td { color: var(--muted); text-align: center; padding: 16px; }
 
-.prs tbody tr:hover { background: var(--row-hover); }
 .prs tbody tr:last-child td { border-bottom: none; }
 
-.prs tr[data-status="ready"] { background: var(--row-ready); }
-
-/* Rows not targeting main (backports, feature branches) get their own,
- * lighter tint; it wins over the ready green so they read as one group. */
-.prs tbody tr:not([data-base="main"]) { background: var(--row-other); }
+/* Row backgrounds, in increasing order of precedence (later rules win at
+ * equal specificity):
+ *   1. zebra banding on even rows for readability across wide rows;
+ *   2. ready rows are tinted green regardless of parity (this, plus the
+ *      three green gate ticks, is how "ready" reads now the status column
+ *      is gone);
+ *   3. hover always wins.
+ * Rows not targeting main keep their own signal as a colored left edge
+ * (box-shadow, so it never disturbs the banding or shifts the layout). */
+.prs tbody tr.stripe { background: var(--stripe); }
+.prs tbody tr[data-status="ready"] { background: var(--row-ready); }
+.prs tbody tr:not([data-base="main"]) {
+	box-shadow: inset 3px 0 0 0 var(--target-accent);
+}
+.prs tbody tr:hover { background: var(--row-hover); }
 
 .prs td.num, .prs td.gate { white-space: nowrap; }
 .prs td.gate { text-align: center; }
@@ -484,6 +498,20 @@ function openReadyPRs() {
 	}
 }
 
+/* Zebra-stripe the currently visible rows. Driven from JS rather than
+ * CSS :nth-child so the banding stays correct after rows are hidden by a
+ * filter or reordered by a sort, instead of leaving parity gaps. */
+function restripe() {
+	let visible = 0;
+	document.querySelectorAll("#pr-table tbody tr").forEach((row) => {
+		if (row.hidden) {
+			return;
+		}
+		row.classList.toggle("stripe", visible % 2 == 1);
+		visible++;
+	});
+}
+
 /* Build one filter chip per target branch found in the table, "main"
  * first. The chip group only appears when there is a choice to make. */
 function buildTargetChips(rows) {
@@ -571,6 +599,8 @@ function setupFilters() {
 					(!value || c.row.dataset.base == value)).length;
 		});
 
+		restripe();
+
 		sessionStorage.setItem("filterText", text);
 		localStorage.setItem("filterStatus", status);
 		localStorage.setItem("filterTarget", target);
@@ -639,6 +669,7 @@ function setupSorting() {
 					return ascending ? cmp : -cmp;
 				})
 				.forEach(([, row]) => tbody.appendChild(row));
+			restripe();
 		});
 	});
 }
