@@ -25,7 +25,6 @@
 	--stripe: #eef1f6;          /* even-row zebra band */
 	--row-ready: #e4f6ea;       /* ready rows, overrides the zebra band */
 	--row-hover: #e2e8f2;
-	--target-accent: #9fb0cb;   /* left edge on rows not targeting main */
 	--header-bg: #333f67;
 	--header-fg: #ffffff;
 }
@@ -50,7 +49,6 @@
 		--stripe: #262f40;          /* even-row zebra band, a step above panel */
 		--row-ready: #204a30;       /* clearly green, not near-black */
 		--row-hover: #313d52;
-		--target-accent: #5b6c9c;   /* left edge on rows not targeting main */
 		--header-bg: #2c3759;
 		--header-fg: #e9eef9;
 	}
@@ -284,13 +282,10 @@ a:hover { text-decoration: underline; }
  *      three green gate ticks, is how "ready" reads now the status column
  *      is gone);
  *   3. hover always wins.
- * Rows not targeting main keep their own signal as a colored left edge
- * (box-shadow, so it never disturbs the banding or shifts the layout). */
+ * Which branch a PR targets is left to the Target column and its filter,
+ * so no extra per-row shading competes with the banding. */
 .prs tbody tr.stripe { background: var(--stripe); }
 .prs tbody tr[data-status="ready"] { background: var(--row-ready); }
-.prs tbody tr:not([data-base="main"]) {
-	box-shadow: inset 3px 0 0 0 var(--target-accent);
-}
 .prs tbody tr:hover { background: var(--row-hover); }
 
 .prs td.num, .prs td.gate { white-space: nowrap; }
